@@ -2,9 +2,9 @@
 
 const offlineStore = (() => {
   const scope = new URL("./", location.href);
-  const hosted = document.documentElement.dataset.offlineOnly === "true";
-  const name = hosted ? `arcanblade-import:${scope.pathname}` : "arcanblade-offline";
-  const available = location.protocol === "https:" && window.isSecureContext && "serviceWorker" in navigator
+  const name = `arcanblade-import:${scope.pathname}`;
+  const storageFolder = encodeURIComponent(name);
+  const available = window.isSecureContext && "serviceWorker" in navigator
     && typeof navigator.storage?.getDirectory === "function"
     && typeof navigator.locks?.request === "function"
     && typeof indexedDB !== "undefined";
@@ -42,7 +42,7 @@ const offlineStore = (() => {
 
   async function directory() {
     const root = await navigator.storage.getDirectory();
-    return hosted ? root.getDirectoryHandle(encodeURIComponent(name), { create: true }) : root;
+    return root.getDirectoryHandle(storageFolder, { create: true });
   }
 
   async function removeFile(file) {
@@ -59,7 +59,7 @@ const offlineStore = (() => {
     await index("readwrite", store => store.delete(record.id));
   }
 
-  function download(source, file, size, signal, onProgress) {
+  function writeAudio(source, file, size, signal) {
     signal.throwIfAborted();
     return new Promise((resolve, reject) => {
       const worker = new Worker(new URL("offline-download.js", scope));
@@ -69,10 +69,6 @@ const offlineStore = (() => {
         worker.terminate();
       };
       worker.onmessage = ({ data }) => {
-        if (data.written !== undefined) {
-          onProgress(data.written);
-          return;
-        }
         finish();
         if (data.error) reject(new DOMException(data.error, data.name));
         else resolve(data);
@@ -82,22 +78,22 @@ const offlineStore = (() => {
         reject(new Error("无法写入手机存储。"));
       };
       signal.addEventListener("abort", cancel, { once: true });
-      worker.postMessage({ ...source, directory: hosted ? encodeURIComponent(name) : "", file, size });
+      worker.postMessage({ ...source, directory: storageFolder, file, size });
     });
   }
 
-  async function save(record, source, signal, progress) {
+  async function save(record, source, signal) {
     const file = crypto.randomUUID();
     try {
       const previous = await index("readonly", store => store.get(record.id));
-      if (source.blob && previous?.crc === record.crc && previous.size === record.size
+      if (previous?.crc === record.crc && previous.size === record.size
           && previous.mime === source.mime) source.previous = await getFile(previous).catch(() => null);
-      if (source.blob && !source.previous) {
+      if (!source.previous) {
         const estimate = await navigator.storage.estimate?.().catch(() => null);
         if (estimate && estimate.quota - estimate.usage < record.size)
           throw new DOMException("手机存储空间不足。", "QuotaExceededError");
       }
-      const result = await download(source, file, record.size, signal, progress);
+      const result = await writeAudio(source, file, record.size, signal);
       signal.throwIfAborted();
       if (result.unchanged) {
         if (JSON.stringify(previous.subtitles) === JSON.stringify(record.subtitles)
@@ -118,10 +114,8 @@ const offlineStore = (() => {
   }
 
   return {
-    available, hosted, getFile,
+    available, getFile,
     remove: record => navigator.locks.request(name, () => remove(record)),
-    save: (record, path, signal, progress) => navigator.locks.request(name, { signal },
-      () => save(record, { path }, signal, progress)),
     async importPackage(pack, signal, progress) {
       return navigator.locks.request(name, { signal }, async () => {
         for (const track of pack.tracks) {
@@ -130,7 +124,7 @@ const offlineStore = (() => {
           const outcome = await save({ id: `${pack.workId}/${track.id}`, workId: pack.workId, workName: pack.workName,
             trackName: track.name, order: track.order, size: track.entry.size, crc: track.entry.crc,
             subtitles, cover: pack.cover, coverCrc: pack.coverCrc },
-          { blob: track.entry.blob, expectedCrc: track.entry.crc, mime: track.mime }, signal, () => {});
+          { blob: track.entry.blob, expectedCrc: track.entry.crc, mime: track.mime }, signal);
           progress(outcome);
         }
       });

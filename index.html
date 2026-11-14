@@ -6,9 +6,9 @@
   <meta name="theme-color" content="#151a1d">
   <title>Arcanblade 手机播放</title>
   <link rel="icon" href="mark.png">
+  <link rel="stylesheet" href="player.css">
   <link rel="apple-touch-icon" href="icon-192.png">
   <link rel="manifest" href="manifest.webmanifest">
-  <link rel="stylesheet" href="player.css">
   <script src="offline-zip.js" defer></script>
   <script src="offline-store.js" defer></script>
   <script src="player.js" defer></script>
@@ -21,7 +21,6 @@
       <strong>Arcanblade</strong>
     </span>
     <button id="library-button" hidden>作品库</button>
-    <button id="offline-button" type="button" hidden>离线库</button>
   </header>
   <main>
     <p id="connection" role="status"></p>
@@ -96,9 +95,7 @@
         <div class="track-controls">
           <button id="previous" type="button">上一首</button>
           <button id="next" type="button">下一首</button>
-          <button id="save-track" type="button" hidden>保存到手机</button>
         </div>
-        <p id="save-status" role="status" hidden></p>
       </footer>
     </section>
   </main>

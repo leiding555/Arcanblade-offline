@@ -10,8 +10,7 @@ const subtitleScroll = element("subtitle-scroll");
 const subtitleCues = element("subtitle-cues");
 const resumeSubtitles = element("resume-subtitles");
 const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
-const saveButton = element("save-track");
-const saveStatus = element("save-status");
+const hosted = document.documentElement.dataset.offlineOnly === "true";
 const inWechat = /MicroMessenger/i.test(navigator.userAgent);
 const standaloneMode = window.matchMedia("(display-mode: standalone)");
 const isStandalone = () => standaloneMode.matches || navigator.standalone === true;
@@ -37,7 +36,6 @@ let offlineReady = false;
 let playingOffline = false;
 let audioObjectUrl = "";
 let coverObjectUrl = "";
-let saving = null;
 let importing = null;
 let offlineWorkId = null;
 let offlineCoverUrls = [];
@@ -46,10 +44,8 @@ const packageForm = element("package-form");
 function view(id) {
   for (const name of views) element(name).hidden = name !== id;
   document.body.classList.toggle("player-open", id === "player");
-  element("tracks-button").hidden = id !== "player" || (playingOffline && !offlineStore.hosted);
-  element("library-button").hidden = offlineStore.hosted || id === "library" || id === "pairing" || inWechat;
-  element("offline-button").hidden = id === "offline" || !offlineReady || offlineStore.hosted;
-  saveButton.hidden = id !== "player" || playingOffline || !offlineReady;
+  element("tracks-button").hidden = id !== "player";
+  element("library-button").hidden = hosted || id === "library" || id === "pairing" || inWechat;
 }
 
 async function request(path, options) {
@@ -94,7 +90,6 @@ function stopTrack() {
   resumeSubtitles.hidden = true;
   subtitleStatus = "";
   playbackStatus.textContent = "";
-  if (!saving) saveStatus.textContent = "";
 }
 
 function showPairing(error) {
@@ -130,10 +125,6 @@ async function showWorks(initial = false) {
     view("library");
   } catch (error) {
     if (generation !== viewGeneration) return;
-    if (initial && offlineReady) {
-      await showOffline();
-      return;
-    }
     showPairing(error.status === 401 && initial ? null : error);
   }
 }
@@ -330,7 +321,6 @@ function playTrack(index) {
   element("previous").disabled = index === 0;
   element("next").disabled = index === tracks.length - 1;
   view("player");
-  updateSaveState();
 
   const path = `/api/works/${work.id}/tracks/${track.id}`;
   audio.src = path + "/audio";
@@ -366,12 +356,12 @@ function fileSize(bytes) {
 }
 
 function updateImportControls() {
-  element("import-packs").hidden = !offlineStore.hosted || !offlineReady || !!importing;
+  element("import-packs").hidden = !offlineReady || !!importing;
   element("cancel-import").hidden = !importing;
 }
 
 function updateInstallControls() {
-  installButton.hidden = !offlineStore.hosted || !offlineReady || offlineWorkId !== null
+  installButton.hidden = !hosted || !offlineReady || offlineWorkId !== null
     || isStandalone() || appInstalled;
   if (installButton.hidden) installHelp.textContent = "";
 }
@@ -389,42 +379,40 @@ async function showOffline() {
   offlineCoverUrls = [];
   updateImportControls();
   updateInstallControls();
+  if (!offlineReady) return;
   try {
     const entries = await offlineStore.list();
     if (generation !== viewGeneration) return;
     work = null;
-    tracks = entries;
     element("offline-heading").textContent = "离线库";
-    if (offlineStore.hosted) {
-      const works = new Map();
-      for (const record of entries) {
-        if (!works.has(record.workId)) works.set(record.workId, []);
-        works.get(record.workId).push(record);
-      }
-      if (!works.has(offlineWorkId)) offlineWorkId = null;
-      updateInstallControls();
-      if (offlineWorkId) {
-        tracks = works.get(offlineWorkId).sort((a, b) => a.order - b.order || a.id.localeCompare(b.id));
-        element("offline-heading").textContent = tracks[0].workName;
-        const back = document.createElement("button");
-        back.type = "button";
-        back.textContent = "返回离线库";
-        back.addEventListener("click", () => { offlineWorkId = null; void showOffline(); });
-        grid.append(back);
-      } else {
-        tracks = [];
-        for (const [id, records] of works) {
-          const card = document.createElement("button");
-          card.className = "work-card";
-          const image = document.createElement("img");
-          const url = records[0].cover ? URL.createObjectURL(records[0].cover) : "mark.png";
-          if (records[0].cover) offlineCoverUrls.push(url);
-          image.src = url;
-          image.alt = "";
-          card.append(image, `${records[0].workName} · ${records.length} 条`);
-          card.addEventListener("click", () => { offlineWorkId = id; void showOffline(); });
-          grid.append(card);
-        }
+    const works = new Map();
+    for (const record of entries) {
+      if (!works.has(record.workId)) works.set(record.workId, []);
+      works.get(record.workId).push(record);
+    }
+    if (!works.has(offlineWorkId)) offlineWorkId = null;
+    updateInstallControls();
+    if (offlineWorkId) {
+      tracks = works.get(offlineWorkId).sort((a, b) => a.order - b.order || a.id.localeCompare(b.id));
+      element("offline-heading").textContent = tracks[0].workName;
+      const back = document.createElement("button");
+      back.type = "button";
+      back.textContent = "返回离线库";
+      back.addEventListener("click", () => { offlineWorkId = null; void showOffline(); });
+      grid.append(back);
+    } else {
+      tracks = [];
+      for (const [id, records] of works) {
+        const card = document.createElement("button");
+        card.className = "work-card";
+        const image = document.createElement("img");
+        const url = records[0].cover ? URL.createObjectURL(records[0].cover) : "mark.png";
+        if (records[0].cover) offlineCoverUrls.push(url);
+        image.src = url;
+        image.alt = "";
+        card.append(image, `${records[0].workName} · ${records.length} 条`);
+        card.addEventListener("click", () => { offlineWorkId = id; void showOffline(); });
+        grid.append(card);
       }
     }
     const used = entries.reduce((sum, record) => sum + record.size + (record.cover?.size ?? 0), 0);
@@ -512,7 +500,6 @@ async function playOffline(index) {
   element("previous").disabled = index === 0;
   element("next").disabled = index === tracks.length - 1;
   view("player");
-  updateSaveState();
   try {
     const file = await offlineStore.getFile(record);
     if (generation !== trackGeneration) return;
@@ -528,64 +515,7 @@ async function playOffline(index) {
       }
     });
   } catch {
-    if (generation === trackGeneration) playbackStatus.textContent = "本地音频已缺失，请重新保存。";
-  }
-}
-
-function updateSaveState() {
-  saveButton.textContent = saving ? "取消保存" : "保存到手机";
-  saveStatus.hidden = element("player").hidden || playingOffline || !offlineReady || !saveStatus.textContent;
-}
-
-async function saveCurrentTrack() {
-  if (saving) {
-    saving.abort();
-    return;
-  }
-  if (!work || !tracks[trackIndex] || playingOffline) return;
-  if (!isStandalone() && isAppleMobile()) {
-    saveStatus.textContent = "请先通过 Safari 的分享菜单添加到主屏幕，再从主屏幕打开并保存。";
-    updateSaveState();
-    return;
-  }
-  const controller = new AbortController();
-  saving = controller;
-  const { signal } = controller;
-  const track = tracks[trackIndex];
-  const workId = work.id;
-  const path = `/api/works/${workId}/tracks/${track.id}`;
-  const record = { id: `${workId}/${track.id}`, workName: work.name, trackName: track.name };
-  saveStatus.textContent = "正在检查文件大小…";
-  updateSaveState();
-  try {
-    // Request persistence in the user's click handler when the browser supports it.
-    navigator.storage.persist?.().catch(() => {});
-    const head = await fetch(path + "/audio", { method: "HEAD", signal });
-    if (!head.ok) throw new Error(head.status === 401 ? "配对已失效，请重新连接电脑。" : "无法读取音轨。");
-    record.size = Number(head.headers.get("Content-Length"));
-    if (!Number.isSafeInteger(record.size) || record.size <= 0) throw new Error("无法确认音频大小。");
-    const estimate = await navigator.storage.estimate?.().catch(() => null);
-    if (estimate && estimate.quota - estimate.usage < record.size) {
-      throw new DOMException("手机存储空间不足。", "QuotaExceededError");
-    }
-    if (!window.confirm(`保存「${track.name}」到手机？音频大小约 ${fileSize(record.size)}。`)) return;
-    saveStatus.textContent = "正在保存…";
-    record.subtitles = await request(path + "/subtitles", { signal });
-    if (record.subtitles.state === "unavailable") throw new Error("无法读取绑定字幕，请稍后重试。");
-    const cover = await fetch(`/api/works/${workId}/cover`, { signal });
-    if (!cover.ok) throw new Error("无法读取封面，请稍后重试。");
-    record.cover = await cover.blob();
-    await offlineStore.save(record, path + "/audio", signal, written => {
-      saveStatus.textContent = `已保存 ${fileSize(written)} / ${fileSize(record.size)}`;
-    });
-    saveStatus.textContent = "已保存，可在离线库播放。";
-  } catch (error) {
-    saveStatus.textContent = signal.aborted ? "已取消保存。"
-      : error.name === "QuotaExceededError" ? "手机存储空间不足，请删除离线音轨后重试。" : message(error);
-  } finally {
-    saving = null;
-    if (saveStatus.textContent === "正在检查文件大小…") saveStatus.textContent = "";
-    updateSaveState();
+    if (generation === trackGeneration) playbackStatus.textContent = "本地音频已缺失，请重新导入离线包。";
   }
 }
 
@@ -617,7 +547,6 @@ element("pair-form").addEventListener("submit", event => {
 element("library-button").addEventListener("click", () => showWorks());
 element("refresh").addEventListener("click", () => showWorks());
 element("tracks-button").addEventListener("click", () => playingOffline ? showOffline() : showWork(work));
-element("offline-button").addEventListener("click", showOffline);
 element("package-open").addEventListener("click", openPackageSelection);
 element("package-close").addEventListener("click", () => { packageForm.hidden = true; });
 element("package-tracks").addEventListener("change", updatePackageSelection);
@@ -631,7 +560,7 @@ packageForm.addEventListener("submit", () => {
 });
 element("cancel-import").addEventListener("click", () => importing?.abort());
 window.addEventListener("beforeinstallprompt", event => {
-  if (!offlineStore.hosted || isStandalone() || appInstalled) return;
+  if (!hosted || isStandalone() || appInstalled) return;
   event.preventDefault();
   installPrompt = event;
   installHelp.textContent = "";
@@ -679,7 +608,6 @@ element("pack-files").addEventListener("change", event => {
   event.target.value = "";
   void importPackages(files);
 });
-saveButton.addEventListener("click", saveCurrentTrack);
 element("previous").addEventListener("click", () => (playingOffline ? playOffline : playTrack)(trackIndex - 1));
 element("next").addEventListener("click", () => (playingOffline ? playOffline : playTrack)(trackIndex + 1));
 subtitleScroll.addEventListener("wheel", pauseSubtitleFollowing, { passive: true });
@@ -752,29 +680,24 @@ audio.addEventListener("error", async () => {
   }
 });
 async function startPlayer() {
-  if (inWechat && location.protocol === "https:") {
-    connection.textContent = "请从微信右上角菜单选择「在浏览器中打开」。如果配对链接没有带过去，可在浏览器输入电脑显示的六位码。";
+  if (hosted && inWechat) {
+    connection.textContent = "请从微信右上角菜单选择「在浏览器中打开」。";
     return;
   }
-  if (offlineStore.available) {
-    try {
-      await offlineStore.prepare();
-      offlineReady = true;
-    } catch {
-      connection.textContent = "此浏览器暂时无法使用离线存储。";
+  if (hosted) {
+    if (offlineStore.available) {
+      try {
+        await offlineStore.prepare();
+        offlineReady = true;
+      } catch {
+        // The offline view shows the same guidance for unsupported or failed storage.
+      }
     }
-  }
-  if (offlineStore.hosted) {
     await showOffline();
     if (!offlineReady) connection.textContent = "无法启用离线存储，请使用 Safari 或 Chrome 打开。";
     return;
   }
   const pairingFragment = location.hash;
-  if (offlineReady && !pairingFragment && (isStandalone() || navigator.onLine === false
-      || navigator.serviceWorker.controller)) {
-    await showOffline();
-    return;
-  }
   if (!pairingFragment.startsWith("#pair=")) {
     await showWorks(true);
     return;

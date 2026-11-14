@@ -48,7 +48,7 @@ button:focus-visible, input:focus-visible, .file-picker:focus-within { outline: 
   border-bottom: 1px solid var(--border);
 }
 .site-brand { display: flex; align-items: center; gap: .65rem; }
-#library-button, #offline-button { white-space: nowrap; }
+#library-button { white-space: nowrap; }
 .site-header > button:last-child:not([hidden]), #library-button { margin-left: auto; }
 main { max-width: 40rem; margin: auto; padding: .65rem var(--page-right) 2rem var(--page-left); }
 h1 { margin: .45rem 0 .8rem; font-size: 1.45rem; overflow-wrap: anywhere; }
@@ -85,8 +85,7 @@ h1 { margin: .45rem 0 .8rem; font-size: 1.45rem; overflow-wrap: anywhere; }
 #offline-tracks li { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: .45rem; }
 #offline-tracks li > button:first-child { text-align: left; overflow-wrap: anywhere; }
 #offline-tracks small { display: block; color: var(--muted); }
-#offline-usage, #save-status { color: var(--muted); }
-#save-status { margin: .45rem 0 0; font-size: .875rem; }
+#offline-usage { color: var(--muted); }
 #package-form { padding: .75rem; border: 1px solid var(--border); border-radius: .65rem; }
 #package-tracks { display: grid; max-height: 45vh; overflow: auto; }
 #package-form label { display: flex; align-items: center; gap: .6rem; overflow-wrap: anywhere; }

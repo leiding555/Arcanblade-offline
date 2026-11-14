@@ -54,7 +54,7 @@ main { max-width: 40rem; margin: auto; padding: .65rem var(--page-right) 2rem va
 h1 { margin: .45rem 0 .8rem; font-size: 1.45rem; overflow-wrap: anywhere; }
 .heading { display: flex; justify-content: space-between; align-items: center; gap: .65rem; margin: .5rem 0 1rem; }
 #offline > .heading { flex-wrap: wrap; }
-.offline-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: .5rem; margin-left: auto; }
+.library-actions, .offline-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: .5rem; margin-left: auto; }
 #install-help:empty { margin: 0; }
 #connection, #playback-status { color: var(--muted); }
 #connection:empty, #playback-status:empty { display: none; }

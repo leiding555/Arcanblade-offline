@@ -17,8 +17,6 @@ const isStandalone = () => standaloneMode.matches || navigator.standalone === tr
 const isAppleMobile = () => /iPhone|iPad|iPod|Macintosh.*Mobile/i.test(navigator.userAgent);
 const installButton = element("install-app");
 const installHelp = element("install-help");
-let installPrompt = null;
-let appInstalled = false;
 let work = null;
 let tracks = [];
 let trackIndex = -1;
@@ -46,6 +44,11 @@ function view(id) {
   document.body.classList.toggle("player-open", id === "player");
   element("tracks-button").hidden = id !== "player";
   element("library-button").hidden = hosted || id === "library" || id === "pairing" || inWechat;
+  if (id !== "library") {
+    installButton.hidden = true;
+    installHelp.hidden = true;
+    installButton.setAttribute("aria-expanded", "false");
+  }
 }
 
 async function request(path, options) {
@@ -123,6 +126,7 @@ async function showWorks(initial = false) {
     }
     connection.textContent = result.works.length ? "" : "作品库为空。";
     view("library");
+    installButton.hidden = hosted || isStandalone();
   } catch (error) {
     if (generation !== viewGeneration) return;
     showPairing(error.status === 401 && initial ? null : error);
@@ -360,12 +364,6 @@ function updateImportControls() {
   element("cancel-import").hidden = !importing;
 }
 
-function updateInstallControls() {
-  installButton.hidden = !hosted || !offlineReady || offlineWorkId !== null
-    || isStandalone() || appInstalled;
-  if (installButton.hidden) installHelp.textContent = "";
-}
-
 async function showOffline() {
   const generation = ++viewGeneration;
   stopTrack();
@@ -378,7 +376,6 @@ async function showOffline() {
   for (const url of offlineCoverUrls) URL.revokeObjectURL(url);
   offlineCoverUrls = [];
   updateImportControls();
-  updateInstallControls();
   if (!offlineReady) return;
   try {
     const entries = await offlineStore.list();
@@ -391,7 +388,6 @@ async function showOffline() {
       works.get(record.workId).push(record);
     }
     if (!works.has(offlineWorkId)) offlineWorkId = null;
-    updateInstallControls();
     if (offlineWorkId) {
       tracks = works.get(offlineWorkId).sort((a, b) => a.order - b.order || a.id.localeCompare(b.id));
       element("offline-heading").textContent = tracks[0].workName;
@@ -559,49 +555,15 @@ packageForm.addEventListener("submit", () => {
   element("hosted-library").hidden = false;
 });
 element("cancel-import").addEventListener("click", () => importing?.abort());
-window.addEventListener("beforeinstallprompt", event => {
-  if (!hosted || isStandalone() || appInstalled) return;
-  event.preventDefault();
-  installPrompt = event;
-  installHelp.textContent = "";
-});
-window.addEventListener("appinstalled", () => {
-  appInstalled = true;
-  installPrompt = null;
-  updateInstallControls();
-});
-standaloneMode.addEventListener("change", updateInstallControls);
-installButton.addEventListener("click", async () => {
-  const manualSteps = isAppleMobile()
-    ? "在 Safari 点「分享 → 添加到主屏幕」，开启「作为网页 App 打开」，然后点「添加」。"
-    : "打开浏览器菜单，选择「添加到主屏幕」或「安装应用」。";
-  if (!installPrompt) {
-    installHelp.textContent = manualSteps;
-    return;
-  }
-  const prompt = installPrompt;
-  installPrompt = null;
-  installHelp.textContent = "";
-  installButton.disabled = true;
-  try {
-    await prompt.prompt();
-    const { outcome } = await prompt.userChoice;
-    if (outcome === "accepted") {
-      appInstalled = true;
-      installPrompt = null;
-      updateInstallControls();
-    }
-  } catch {
-    if (!installButton.hidden) installHelp.textContent = manualSteps;
-  } finally {
-    installButton.disabled = false;
-  }
-});
-element("pack-files").addEventListener("click", event => {
-  if (!isStandalone() && isAppleMobile()) {
-    event.preventDefault();
-    element("import-status").textContent = "请先在 Safari 通过分享菜单添加到主屏幕，再从主屏幕打开并导入。";
-  }
+installButton.addEventListener("click", () => {
+  const steps = isAppleMobile()
+    ? "在 Safari 点「分享 → 添加到主屏幕」，然后点「添加」。"
+    : "在浏览器菜单选择「添加到主屏幕」或「创建快捷方式」。";
+  const browserSteps = inWechat ? "请先从微信右上角菜单选择「在浏览器中打开」，按需重新配对。" : "";
+  const expanded = installHelp.hidden;
+  installHelp.textContent = browserSteps + steps + "快捷方式打开的是当前局域网地址，使用时电脑需开启共享。";
+  installHelp.hidden = !expanded;
+  installButton.setAttribute("aria-expanded", String(expanded));
 });
 element("pack-files").addEventListener("change", event => {
   const files = Array.from(event.target.files);

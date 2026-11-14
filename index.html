@@ -7,10 +7,12 @@
   <title>Arcanblade 手机播放</title>
   <link rel="icon" href="mark.png">
   <link rel="stylesheet" href="player.css">
+
   <link rel="apple-touch-icon" href="icon-192.png">
   <link rel="manifest" href="manifest.webmanifest">
   <script src="offline-zip.js" defer></script>
   <script src="offline-store.js" defer></script>
+  <script src="offline-transfer-receiver.js" defer></script>
   <script src="player.js" defer></script>
 </head>
 <body>
@@ -43,7 +45,7 @@
       <div id="works"></div>
     </section>
     <section id="work" hidden>
-      <div class="heading"><h1 id="work-name"></h1><button id="package-open" type="button" hidden>下载离线包</button></div>
+      <div class="heading"><h1 id="work-name"></h1><button id="package-open" type="button" hidden>导出到手机</button></div>
       <form id="package-form" method="post" hidden>
         <div class="heading">
           <label><input id="package-all" type="checkbox"> 全选</label>
@@ -52,10 +54,13 @@
         <div id="package-tracks"></div>
         <input id="package-selection" type="hidden" name="tracks">
         <div class="package-actions">
-          <button id="package-submit" type="submit">开始下载</button>
+          <button id="package-export" type="button">导出到手机</button>
+          <button id="package-submit" type="submit">下载压缩包</button>
           <button id="package-close" type="button">取消</button>
+          <button id="cancel-package-transfer" type="button" hidden>取消导出</button>
         </div>
       </form>
+      <p id="package-transfer-status" role="status" hidden></p>
       <p id="package-help" hidden>下载完成后，从离线库的「导入离线包」选择下载的文件。</p>
       <a id="hosted-library" href="https://leiding555.github.io/Arcanblade-offline/" target="_blank" rel="noopener noreferrer" hidden>打开离线库</a>
       <ul id="tracks"></ul>
@@ -64,11 +69,10 @@
       <div class="heading">
         <h1 id="offline-heading">离线库</h1>
         <div class="offline-actions">
-          <div id="import-packs" class="file-picker" hidden>
-            <label for="pack-files">导入离线包</label>
-            <input id="pack-files" type="file" multiple>
-            <button id="alternate-pack-picker" type="button" hidden>备用选包</button>
-          </div>
+          <label id="import-packs" class="file-picker" for="pack-files" hidden>
+            导入离线包
+            <input id="pack-files" type="file" multiple accept=".zip,application/zip">
+          </label>
           <button id="cancel-import" type="button" hidden>取消导入</button>
         </div>
       </div>

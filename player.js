@@ -39,12 +39,15 @@ let playingOffline = false;
 let audioObjectUrl = "";
 let coverObjectUrl = "";
 let importing = null;
-let choosingPackages = false;
+let receivingPackage = false;
+let transferReceiver = null;
+let packageTransfer = null;
 let offlineWorkId = null;
 let offlineCoverUrls = [];
 const packageForm = element("package-form");
 
 function view(id) {
+  if (id !== "work") packageTransfer?.abort();
   for (const name of views) element(name).hidden = name !== id;
   document.body.classList.toggle("player-open", id === "player");
   element("tracks-button").hidden = id !== "player";
@@ -136,6 +139,7 @@ async function showWorks(initial = false) {
 
 async function showWork(item) {
   const generation = ++viewGeneration;
+  packageTransfer?.abort();
   stopTrack();
   work = item;
   element("work-name").textContent = item.name;
@@ -144,6 +148,7 @@ async function showWork(item) {
   packageForm.hidden = true;
   element("package-open").hidden = true;
   element("package-help").hidden = true;
+  element("package-transfer-status").hidden = true;
   element("hosted-library").hidden = true;
   connection.textContent = "正在读取音轨…";
   view("work");
@@ -184,12 +189,20 @@ function updatePackageSelection() {
   all.indeterminate = chosen.length > 0 && !all.checked;
   element("package-selection").value = chosen.map(input => input.value).join(",");
   element("package-size").textContent = `已选 ${chosen.length} 条 · 约 ${fileSize(total)}`;
-  element("package-submit").disabled = chosen.length === 0 || chosen.length > 4096;
+  const busy = !!packageTransfer;
+  for (const input of enabled) input.disabled = busy;
+  all.disabled = busy;
+  element("package-open").disabled = busy;
+  element("package-close").hidden = busy;
+  element("cancel-package-transfer").hidden = !busy;
+  const cannotSubmit = busy || chosen.length === 0 || chosen.length > 4096;
+  element("package-submit").disabled = cannotSubmit;
+  element("package-export").disabled = cannotSubmit;
   if (chosen.length > 4096) element("package-size").textContent += " · 一次最多 4096 条";
 }
 
 function openPackageSelection() {
-  if (!work) return;
+  if (!work || packageTransfer) return;
   const list = element("package-tracks");
   list.replaceChildren();
   for (const track of tracks) {
@@ -207,6 +220,36 @@ function openPackageSelection() {
   packageForm.action = `/api/works/${work.id}/offline-package`;
   packageForm.hidden = false;
   updatePackageSelection();
+}
+
+async function startPackageExport() {
+  const button = element("package-export");
+  if (button.disabled || packageForm.hidden) return;
+  const status = element("package-transfer-status");
+  const link = element("hosted-library");
+  const generation = viewGeneration;
+  const controller = new AbortController();
+  packageTransfer = controller;
+  status.hidden = false;
+  const setStatus = message => {
+    if (generation === viewGeneration) status.textContent = message;
+  };
+  updatePackageSelection();
+  try {
+    await exportOfflinePackage({
+      receiverUrl: link.href,
+      packageUrl: packageForm.action,
+      selection: element("package-selection").value,
+      signal: controller.signal,
+      setStatus
+    });
+  } catch (error) {
+    setStatus(controller.signal.aborted ? "已取消导出。"
+      : `${message(error)} 可选择「下载压缩包」后手动导入。`);
+  } finally {
+    packageTransfer = null;
+    updatePackageSelection();
+  }
 }
 
 function cueTimestamp(ms) {
@@ -361,12 +404,9 @@ function fileSize(bytes) {
 }
 
 function updateImportControls() {
-  element("import-packs").hidden = !offlineReady || !!importing;
-  element("pack-files").disabled = choosingPackages;
-  const alternatePicker = element("alternate-pack-picker");
-  alternatePicker.hidden = typeof window.showOpenFilePicker !== "function";
-  alternatePicker.disabled = choosingPackages;
-  element("cancel-import").hidden = !importing;
+  const busy = !!importing || receivingPackage;
+  element("import-packs").hidden = !offlineReady || busy;
+  element("cancel-import").hidden = !busy;
 }
 
 function showInstallGuide() {
@@ -464,11 +504,14 @@ async function showOffline() {
   }
 }
 
-async function importPackages(files) {
-  if (!files.length || importing) return;
+async function importPackages(files, transferSignal) {
+  if (!files.length || importing || receivingPackage) return false;
   const status = element("import-status");
   importing = new AbortController();
   const { signal } = importing;
+  const abort = () => importing?.abort();
+  transferSignal?.addEventListener("abort", abort, { once: true });
+  if (transferSignal?.aborted) abort();
   updateImportControls();
   navigator.storage.persist?.().catch(() => {});
   const counts = { added: 0, updated: 0, skipped: 0 };
@@ -493,10 +536,13 @@ async function importPackages(files) {
       }
     }
     status.textContent = errors.length ? `${summary()} ${errors.length} 个包未完成。${errors[0]}`
-      : `导入完成。${summary()} 可以删除「下载」里的原包以释放空间。`;
+      : `导入完成。${summary()}${transferSignal ? "" : " 可以删除「下载」里的原包以释放空间。"}`;
+    return errors.length === 0;
   } catch (error) {
     status.textContent = `${signal.aborted ? "已取消导入。" : "手机存储空间不足。"}${summary()} 已完成的音轨仍可播放。`;
+    return false;
   } finally {
+    transferSignal?.removeEventListener("abort", abort);
     importing = null;
     offlineWorkId = null;
     await showOffline();
@@ -572,11 +618,21 @@ element("package-all").addEventListener("change", event => {
   for (const input of element("package-tracks").querySelectorAll("input")) input.checked = event.target.checked;
   updatePackageSelection();
 });
-packageForm.addEventListener("submit", () => {
+element("package-export").addEventListener("click", startPackageExport);
+element("cancel-package-transfer").addEventListener("click", () => packageTransfer?.abort());
+window.addEventListener("pagehide", () => packageTransfer?.abort());
+packageForm.addEventListener("submit", event => {
+  if (packageTransfer || element("package-submit").disabled) {
+    event.preventDefault();
+    return;
+  }
   element("package-help").hidden = false;
   element("hosted-library").hidden = false;
 });
-element("cancel-import").addEventListener("click", () => importing?.abort());
+element("cancel-import").addEventListener("click", () => {
+  if (importing) importing.abort();
+  else transferReceiver?.cancel();
+});
 window.addEventListener("beforeinstallprompt", event => {
   if (installHelp.hidden || isStandalone()) return;
   event.preventDefault();
@@ -601,26 +657,6 @@ element("pack-files").addEventListener("change", event => {
   const files = Array.from(event.target.files);
   event.target.value = "";
   void importPackages(files);
-});
-element("alternate-pack-picker").addEventListener("click", async () => {
-  if (!offlineReady || importing || choosingPackages || typeof window.showOpenFilePicker !== "function") return;
-  choosingPackages = true;
-  updateImportControls();
-  let files;
-  try {
-    const handles = await window.showOpenFilePicker({ multiple: true });
-    files = await Promise.all(handles.map(handle => handle.getFile()));
-  } catch (error) {
-    if (error?.name !== "AbortError") {
-      const detail = error?.name ? `（${error.name}）` : "";
-      element("import-status").textContent = `备用选包失败${detail}，请重试或使用「选择文件」。`;
-    }
-    return;
-  } finally {
-    choosingPackages = false;
-    updateImportControls();
-  }
-  await importPackages(files);
 });
 element("previous").addEventListener("click", () => (playingOffline ? playOffline : playTrack)(trackIndex - 1));
 element("next").addEventListener("click", () => (playingOffline ? playOffline : playTrack)(trackIndex + 1));
@@ -713,6 +749,15 @@ async function startPlayer() {
     }
     await showOffline();
     if (!offlineReady) connection.textContent = "无法启用离线存储，请使用 Safari 或 Chrome 打开。";
+    transferReceiver = startOfflineTransferReceiver({
+      available: offlineReady,
+      setStatus: message => { element("import-status").textContent = message; },
+      setReceiving: active => {
+        receivingPackage = active;
+        updateImportControls();
+      },
+      importPackage: async (file, signal) => ({ ok: await importPackages([file], signal) })
+    });
     return;
   }
   const pairingFragment = location.hash;

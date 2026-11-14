@@ -13,8 +13,8 @@
 * { box-sizing: border-box; }
 [hidden] { display: none !important; }
 body { margin: 0; }
-button, input, #install-app { font: inherit; min-height: 44px; border-radius: .55rem; }
-button, #install-app, #pack-files::file-selector-button {
+button, input, .file-picker, #install-app { font: inherit; min-height: 44px; border-radius: .55rem; }
+button, .file-picker, #install-app {
   color: var(--accent);
   background: var(--surface);
   border: 1px solid var(--border);
@@ -22,14 +22,21 @@ button, #install-app, #pack-files::file-selector-button {
   cursor: pointer;
 }
 button:disabled { opacity: .45; cursor: default; }
-button:focus-visible, input:focus-visible, #install-app:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
-.file-picker { display: grid; gap: .35rem; min-width: 0; }
-#pack-files { max-width: 100%; }
-#pack-files::file-selector-button {
-  font: inherit;
-  min-height: 44px;
-  border-radius: .55rem;
-  margin-inline-end: .55rem;
+button:focus-visible, input:focus-visible, .file-picker:focus-within, #install-app:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+.file-picker { position: relative; display: inline-flex; align-items: center; }
+.file-picker input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  cursor: pointer;
+}
+.file-picker input::file-selector-button {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  cursor: inherit;
 }
 .site-header {
   display: flex;
@@ -87,7 +94,7 @@ h1 { margin: .45rem 0 .8rem; font-size: 1.45rem; overflow-wrap: anywhere; }
 #package-tracks { display: grid; max-height: 45vh; overflow: auto; }
 #package-form label { display: flex; align-items: center; gap: .6rem; overflow-wrap: anywhere; }
 #package-form input[type="checkbox"] { min-height: 2.75rem; accent-color: var(--accent); }
-.package-actions { display: flex; gap: .5rem; margin-top: .65rem; }
+.package-actions { display: flex; flex-wrap: wrap; gap: .5rem; margin-top: .65rem; }
 #hosted-library { display: inline-block; padding: .55rem 0; color: var(--accent); }
 #import-status:empty { display: none; }
 .player-open {

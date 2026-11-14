@@ -2,9 +2,9 @@
 
 const scope = new URL(self.registration.scope);
 const prefix = scope.pathname === "/" ? "arcanblade-shell-" : `arcanblade-shell:${scope.pathname}:`;
-const CACHE = prefix + "6a7939ab921efac062cd7086b8259e398bf6de9cec8a9022d355d76e7e46ab48";
+const CACHE = prefix + "21491d5b8b8a170b9c1c20e4e1ae81ac91e25dcc3631251680579d17de8fceea";
 const SHELL = ["./", "player.css", "player.js", "mark.png", "manifest.webmanifest", "icon-192.png", "icon-512.png",
-  "offline-store.js", "offline-download.js", "offline-zip.js"].map(path => new URL(path, scope).href);
+  "offline-store.js", "offline-download.js", "offline-zip.js", "offline-transfer-receiver.js"].map(path => new URL(path, scope).href);
 
 self.addEventListener("install", event => {
   event.waitUntil(caches.open(CACHE).then(cache => cache.addAll(SHELL)));

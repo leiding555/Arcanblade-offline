@@ -17,8 +17,10 @@ const inEmbeddedBrowser = inWechat || /\bQQ\/\d/i.test(navigator.userAgent)
 const standaloneMode = window.matchMedia("(display-mode: standalone)");
 const isStandalone = () => standaloneMode.matches || navigator.standalone === true;
 const isAppleMobile = () => /iPhone|iPad|iPod|Macintosh.*Mobile/i.test(navigator.userAgent);
-const installButton = element("install-app");
+const installLink = element("install-app");
 const installHelp = element("install-help");
+const installOffline = element("install-offline");
+let installPrompt = null;
 let work = null;
 let tracks = [];
 let trackIndex = -1;
@@ -46,11 +48,7 @@ function view(id) {
   document.body.classList.toggle("player-open", id === "player");
   element("tracks-button").hidden = id !== "player";
   element("library-button").hidden = hosted || id === "library" || id === "pairing";
-  if (id !== "library") {
-    installButton.hidden = true;
-    installHelp.hidden = true;
-    installButton.setAttribute("aria-expanded", "false");
-  }
+  if (id !== "library") installLink.hidden = true;
 }
 
 async function request(path, options) {
@@ -128,7 +126,7 @@ async function showWorks(initial = false) {
     }
     connection.textContent = result.works.length ? "" : "作品库为空。";
     view("library");
-    installButton.hidden = hosted || isStandalone();
+    installLink.hidden = hosted || isStandalone();
   } catch (error) {
     if (generation !== viewGeneration) return;
     showPairing(error.status === 401 && initial ? null : error);
@@ -366,6 +364,23 @@ function updateImportControls() {
   element("cancel-import").hidden = !importing;
 }
 
+function showInstallGuide() {
+  if (location.hash !== "#install") return;
+  history.replaceState(history.state, "", location.pathname + location.search);
+  if (isStandalone()) return;
+  element("install-steps").textContent = (isAppleMobile()
+    ? "在 Safari 点「分享 → 添加到主屏幕」；如果有「作为网页 App 打开」选项，请开启后点「添加」。"
+    : "在浏览器菜单选择「添加到主屏幕」或「安装应用」。")
+    + "添加后从桌面图标打开离线库，再导入下载的离线包。";
+  installHelp.hidden = false;
+}
+
+function hideInstallGuide() {
+  installPrompt = null;
+  installOffline.hidden = true;
+  installHelp.hidden = true;
+}
+
 async function showOffline() {
   const generation = ++viewGeneration;
   stopTrack();
@@ -557,14 +572,25 @@ packageForm.addEventListener("submit", () => {
   element("hosted-library").hidden = false;
 });
 element("cancel-import").addEventListener("click", () => importing?.abort());
-installButton.addEventListener("click", () => {
-  const steps = isAppleMobile()
-    ? "在 Safari 点「分享 → 添加到主屏幕」，然后点「添加」。"
-    : "在浏览器菜单选择「添加到主屏幕」或「创建快捷方式」。";
-  const expanded = installHelp.hidden;
-  installHelp.textContent = steps + "快捷方式打开的是当前局域网地址，使用时电脑需开启共享。";
-  installHelp.hidden = !expanded;
-  installButton.setAttribute("aria-expanded", String(expanded));
+window.addEventListener("beforeinstallprompt", event => {
+  if (installHelp.hidden || isStandalone()) return;
+  event.preventDefault();
+  installPrompt = event;
+  installOffline.hidden = false;
+});
+window.addEventListener("appinstalled", hideInstallGuide);
+installOffline.addEventListener("click", async () => {
+  if (!installPrompt) return;
+  const prompt = installPrompt;
+  installPrompt = null;
+  installOffline.hidden = true;
+  try {
+    await prompt.prompt();
+    const { outcome } = await prompt.userChoice;
+    if (outcome === "accepted") hideInstallGuide();
+  } catch {
+    // The manual steps stay visible if the browser cannot open its prompt.
+  }
 });
 element("pack-files").addEventListener("change", event => {
   const files = Array.from(event.target.files);
@@ -651,6 +677,7 @@ async function startPlayer() {
     return;
   }
   if (hosted) {
+    showInstallGuide();
     if (offlineStore.available) {
       try {
         await offlineStore.prepare();

@@ -36,11 +36,10 @@
       <div class="heading">
         <h1>作品库</h1>
         <div class="library-actions">
-          <button id="install-app" type="button" aria-controls="install-help" aria-expanded="false" hidden>添加到桌面</button>
+          <a id="install-app" href="https://leiding555.github.io/Arcanblade-offline/#install" rel="noreferrer" hidden>添加到桌面</a>
           <button id="refresh">刷新</button>
         </div>
       </div>
-      <p id="install-help" role="status" hidden></p>
       <div id="works"></div>
     </section>
     <section id="work" hidden>
@@ -72,6 +71,11 @@
           <button id="cancel-import" type="button" hidden>取消导入</button>
         </div>
       </div>
+      <section id="install-help" aria-labelledby="install-heading" hidden>
+        <h2 id="install-heading">添加离线库到桌面</h2>
+        <p id="install-steps"></p>
+        <button id="install-offline" type="button" hidden>添加到桌面</button>
+      </section>
       <p id="import-status" role="status"></p>
       <p id="offline-usage"></p>
       <div id="offline-works"></div>

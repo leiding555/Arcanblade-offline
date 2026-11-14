@@ -13,8 +13,8 @@
 * { box-sizing: border-box; }
 [hidden] { display: none !important; }
 body { margin: 0; }
-button, input, .file-picker { font: inherit; min-height: 44px; border-radius: .55rem; }
-button, .file-picker {
+button, input, .file-picker, #install-app { font: inherit; min-height: 44px; border-radius: .55rem; }
+button, .file-picker, #install-app {
   color: var(--accent);
   background: var(--surface);
   border: 1px solid var(--border);
@@ -22,7 +22,7 @@ button, .file-picker {
   cursor: pointer;
 }
 button:disabled { opacity: .45; cursor: default; }
-button:focus-visible, input:focus-visible, .file-picker:focus-within { outline: 2px solid var(--accent); outline-offset: 3px; }
+button:focus-visible, input:focus-visible, .file-picker:focus-within, #install-app:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
 .file-picker { position: relative; display: inline-flex; align-items: center; }
 .file-picker input {
   position: absolute;
@@ -55,7 +55,11 @@ h1 { margin: .45rem 0 .8rem; font-size: 1.45rem; overflow-wrap: anywhere; }
 .heading { display: flex; justify-content: space-between; align-items: center; gap: .65rem; margin: .5rem 0 1rem; }
 #offline > .heading { flex-wrap: wrap; }
 .library-actions, .offline-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: .5rem; margin-left: auto; }
-#install-help:empty { margin: 0; }
+#install-app { display: inline-flex; align-items: center; text-decoration: none; }
+#install-help { margin-bottom: 1rem; padding: .75rem; border: 1px solid var(--border); border-radius: .65rem; }
+#install-help h2 { margin: 0; font-size: 1.05rem; }
+#install-steps { margin: .45rem 0 0; color: var(--muted); }
+#install-offline { margin-top: .65rem; }
 #connection, #playback-status { color: var(--muted); }
 #connection:empty, #playback-status:empty { display: none; }
 #pair-form { display: grid; justify-items: start; gap: .75rem; }

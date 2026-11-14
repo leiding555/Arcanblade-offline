@@ -39,6 +39,7 @@ let playingOffline = false;
 let audioObjectUrl = "";
 let coverObjectUrl = "";
 let importing = null;
+let choosingPackages = false;
 let offlineWorkId = null;
 let offlineCoverUrls = [];
 const packageForm = element("package-form");
@@ -361,6 +362,10 @@ function fileSize(bytes) {
 
 function updateImportControls() {
   element("import-packs").hidden = !offlineReady || !!importing;
+  element("pack-files").disabled = choosingPackages;
+  const alternatePicker = element("alternate-pack-picker");
+  alternatePicker.hidden = typeof window.showOpenFilePicker !== "function";
+  alternatePicker.disabled = choosingPackages;
   element("cancel-import").hidden = !importing;
 }
 
@@ -596,6 +601,26 @@ element("pack-files").addEventListener("change", event => {
   const files = Array.from(event.target.files);
   event.target.value = "";
   void importPackages(files);
+});
+element("alternate-pack-picker").addEventListener("click", async () => {
+  if (!offlineReady || importing || choosingPackages || typeof window.showOpenFilePicker !== "function") return;
+  choosingPackages = true;
+  updateImportControls();
+  let files;
+  try {
+    const handles = await window.showOpenFilePicker({ multiple: true });
+    files = await Promise.all(handles.map(handle => handle.getFile()));
+  } catch (error) {
+    if (error?.name !== "AbortError") {
+      const detail = error?.name ? `（${error.name}）` : "";
+      element("import-status").textContent = `备用选包失败${detail}，请重试或使用「选择文件」。`;
+    }
+    return;
+  } finally {
+    choosingPackages = false;
+    updateImportControls();
+  }
+  await importPackages(files);
 });
 element("previous").addEventListener("click", () => (playingOffline ? playOffline : playTrack)(trackIndex - 1));
 element("next").addEventListener("click", () => (playingOffline ? playOffline : playTrack)(trackIndex + 1));

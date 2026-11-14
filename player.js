@@ -1,7 +1,7 @@
 "use strict";
 
 const element = id => document.getElementById(id);
-const views = ["pairing", "library", "work", "offline", "player"];
+const views = ["pairing", "library", "export", "work", "offline", "player"];
 const audio = element("audio");
 const connection = element("connection");
 const playbackStatus = element("playback-status");
@@ -20,7 +20,14 @@ const isAppleMobile = () => /iPhone|iPad|iPod|Macintosh.*Mobile/i.test(navigator
 const installLink = element("install-app");
 const installHelp = element("install-help");
 const installOffline = element("install-offline");
+const home = hosted ? "offline" : "library";
 let installPrompt = null;
+let route;
+let activeView;
+let goingBack = false;
+const scrollPositions = new Map();
+let libraryWorks = [];
+let exportWorks = new Map();
 let work = null;
 let tracks = [];
 let trackIndex = -1;
@@ -42,17 +49,85 @@ let importing = null;
 let receivingPackage = false;
 let transferReceiver = null;
 let packageTransfer = null;
-let offlineWorkId = null;
 let offlineCoverUrls = [];
 const packageForm = element("package-form");
 
 function view(id) {
-  if (id !== "work") packageTransfer?.abort();
+  activeView = id;
   for (const name of views) element(name).hidden = name !== id;
   document.body.classList.toggle("player-open", id === "player");
-  element("tracks-button").hidden = id !== "player";
-  element("library-button").hidden = hosted || id === "library" || id === "pairing";
-  if (id !== "library") installLink.hidden = true;
+  element("tracks-button").hidden = id === "pairing" || !route?.depth;
+  installLink.hidden = hosted || id === "pairing";
+}
+
+function saveScroll() {
+  if (route && activeView !== "player" && activeView !== "pairing") {
+    scrollPositions.set(route.key, window.scrollY);
+  }
+}
+
+function setRoute(next, depth, push) {
+  const entry = { ...next, home, depth, key: Array.from(crypto.getRandomValues(new Uint32Array(2))).join("-") };
+  if (push) history.pushState(entry, "");
+  else history.replaceState(entry, "");
+  route = entry;
+  return entry;
+}
+
+function navigate(next) {
+  if (goingBack) return;
+  saveScroll();
+  void renderRoute(setRoute(next, route.depth + 1, true));
+}
+
+async function renderRoute(entry) {
+  const { page, item, workId, trackId } = entry;
+  if (page === "library") await showWorks(activeView === undefined);
+  else if (page === "work" || page === "lan-player") {
+    await showWork(item);
+    if (route !== entry || activeView !== "work") return;
+    if (page === "lan-player") playTrack(tracks.findIndex(track => track.id === trackId));
+  } else if (page === "export") {
+    if (!libraryWorks.length) await showWorks();
+    if (route !== entry || activeView === "pairing") return;
+    showExport();
+  } else {
+    await showOffline(workId);
+    if (route !== entry || activeView !== "offline") return;
+    if (page === "offline-player") await playOffline(tracks.findIndex(track => track.id === trackId));
+  }
+  if (route === entry) window.scrollTo({ top: scrollPositions.get(entry.key) ?? 0, behavior: "instant" });
+}
+
+function back() {
+  if (!route.depth || goingBack) return;
+  goingBack = true;
+  history.back();
+}
+
+window.addEventListener("popstate", ({ state }) => {
+  goingBack = false;
+  if (state?.home !== home || !state.key) return;
+  saveScroll();
+  route = state;
+  void renderRoute(route);
+});
+
+function changeTrack(index) {
+  const track = tracks[index];
+  if (!track || !route.page.endsWith("-player")) return;
+  route = { ...route, trackId: track.id };
+  history.replaceState(route, "");
+  (hosted ? playOffline : playTrack)(index);
+}
+
+function openTrack(track, fromOffline) {
+  if (goingBack) return;
+  saveScroll();
+  setRoute(fromOffline
+    ? { page: "offline-player", workId: track.workId, trackId: track.id }
+    : { page: "lan-player", item: work, trackId: track.id }, route.depth + 1, true);
+  (fromOffline ? playOffline : playTrack)(tracks.indexOf(track));
 }
 
 async function request(path, options) {
@@ -102,6 +177,8 @@ function stopTrack() {
 function showPairing(error) {
   ++viewGeneration;
   stopTrack();
+  libraryWorks = [];
+  exportWorks = new Map();
   view("pairing");
   connection.textContent = error ? message(error) : "";
 }
@@ -114,6 +191,10 @@ async function showWorks(initial = false) {
   try {
     const result = await request("/api/works");
     if (generation !== viewGeneration) return;
+    libraryWorks = result.works;
+    exportWorks = new Map(libraryWorks.map(item => [item.id, exportWorks.get(item.id) ?? {
+      item, tracks: null, selected: new Set(), expanded: false, loading: false, error: ""
+    }]));
     const grid = element("works");
     grid.replaceChildren();
     for (const item of result.works) {
@@ -125,12 +206,12 @@ async function showWorks(initial = false) {
       image.loading = "lazy";
       image.addEventListener("error", () => { image.src = "/mark.png"; }, { once: true });
       card.append(image, document.createTextNode(item.name));
-      card.addEventListener("click", () => showWork(item));
+      card.addEventListener("click", () => navigate({ page: "work", item }));
       grid.append(card);
     }
     connection.textContent = result.works.length ? "" : "作品库为空。";
+    element("batch-open").disabled = !libraryWorks.length;
     view("library");
-    installLink.hidden = hosted || isStandalone();
   } catch (error) {
     if (generation !== viewGeneration) return;
     showPairing(error.status === 401 && initial ? null : error);
@@ -139,16 +220,15 @@ async function showWorks(initial = false) {
 
 async function showWork(item) {
   const generation = ++viewGeneration;
-  packageTransfer?.abort();
   stopTrack();
   work = item;
+  tracks = [];
   element("work-name").textContent = item.name;
   const list = element("tracks");
   list.replaceChildren();
   packageForm.hidden = true;
   element("package-open").hidden = true;
   element("package-help").hidden = true;
-  element("package-transfer-status").hidden = true;
   element("hosted-library").hidden = true;
   connection.textContent = "正在读取音轨…";
   view("work");
@@ -157,9 +237,9 @@ async function showWork(item) {
     if (generation !== viewGeneration) return;
     work = { id: item.id, name: result.name };
     tracks = result.tracks;
-    element("package-open").hidden = !tracks.some(track => track.size > 0);
+    element("package-open").hidden = !tracks.some(isExportableTrack);
     element("work-name").textContent = result.name;
-    for (const [index, track] of tracks.entries()) {
+    for (const track of tracks) {
       const row = document.createElement("li");
       const button = document.createElement("button");
       button.textContent = track.name;
@@ -168,7 +248,7 @@ async function showWork(item) {
         directory.textContent = track.directory;
         button.append(directory);
       }
-      button.addEventListener("click", () => playTrack(index));
+      button.addEventListener("click", () => openTrack(track, false));
       row.append(button);
       list.append(row);
     }
@@ -189,32 +269,23 @@ function updatePackageSelection() {
   all.indeterminate = chosen.length > 0 && !all.checked;
   element("package-selection").value = chosen.map(input => input.value).join(",");
   element("package-size").textContent = `已选 ${chosen.length} 条 · 约 ${fileSize(total)}`;
-  const busy = !!packageTransfer;
-  for (const input of enabled) input.disabled = busy;
-  all.disabled = busy;
-  element("package-open").disabled = busy;
-  element("package-close").hidden = busy;
-  element("cancel-package-transfer").hidden = !busy;
-  const cannotSubmit = busy || chosen.length === 0 || chosen.length > 4096;
-  element("package-submit").disabled = cannotSubmit;
-  element("package-export").disabled = cannotSubmit;
+  element("package-submit").disabled = chosen.length === 0 || chosen.length > 4096;
   if (chosen.length > 4096) element("package-size").textContent += " · 一次最多 4096 条";
 }
 
 function openPackageSelection() {
-  if (!work || packageTransfer) return;
+  if (!work) return;
   const list = element("package-tracks");
   list.replaceChildren();
   for (const track of tracks) {
-    if (!Number.isSafeInteger(track.size) || track.size <= 0) continue;
+    if (!isExportableTrack(track)) continue;
     const label = document.createElement("label");
     const input = document.createElement("input");
     input.type = "checkbox";
     input.value = track.id;
     input.dataset.size = track.size;
     input.checked = true;
-    const text = track.directory && track.directory !== "." ? `${track.directory} / ${track.name}` : track.name;
-    label.append(input, text);
+    label.append(input, exportTrackName(track));
     list.append(label);
   }
   packageForm.action = `/api/works/${work.id}/offline-package`;
@@ -222,33 +293,186 @@ function openPackageSelection() {
   updatePackageSelection();
 }
 
+function isExportableTrack(track) {
+  return Number.isSafeInteger(track.size) && track.size > 0;
+}
+
+function exportTrackName(track) {
+  return track.directory && track.directory !== "." ? `${track.directory} / ${track.name}` : track.name;
+}
+
+function selectedExports() {
+  return libraryWorks.flatMap(item => {
+    const group = exportWorks.get(item.id);
+    const chosen = group.tracks?.filter(track => group.selected.has(track.id)) ?? [];
+    return chosen.length ? [{
+      name: item.name,
+      packageUrl: `/api/works/${item.id}/offline-package`,
+      selection: chosen.map(track => track.id).join(","),
+      count: chosen.length,
+      bytes: chosen.reduce((sum, track) => sum + track.size, 0)
+    }] : [];
+  });
+}
+
+function updateExportSummary() {
+  const packages = selectedExports();
+  const count = packages.reduce((sum, pack) => sum + pack.count, 0);
+  const bytes = packages.reduce((sum, pack) => sum + pack.bytes, 0);
+  const overLimit = packages.some(pack => pack.count > 4096);
+  element("export-size").textContent = `已选 ${packages.length} 部作品 · ${count} 条音轨 · 约 ${fileSize(bytes)}`
+    + (overLimit ? " · 每部作品一次最多 4096 条" : "");
+  element("package-export").disabled = !!packageTransfer || !packages.length || overLimit
+    || [...exportWorks.values()].some(group => group.loading);
+}
+
+async function loadExportTracks(group, selectAll = false) {
+  if (group.loading || group.tracks) return;
+  group.loading = true;
+  group.error = "";
+  group.selectAll = selectAll;
+  renderExportGroup(group);
+  updateExportSummary();
+  try {
+    const result = await request(`/api/works/${group.item.id}/tracks`);
+    group.tracks = result.tracks.filter(isExportableTrack);
+    if (selectAll) group.selected = new Set(group.tracks.map(track => track.id));
+  } catch (error) {
+    group.error = message(error);
+    group.expanded = true;
+    if (error.status === 401 && activeView === "export") showPairing(error);
+  } finally {
+    group.loading = false;
+    group.selectAll = false;
+    if (activeView === "export" && exportWorks.get(group.item.id) === group) {
+      renderExportGroup(group);
+      updateExportSummary();
+    }
+  }
+}
+
+function renderExportGroup(group) {
+  const { item, tracks, selected, expanded, loading, error, controls } = group;
+  if (!controls) return;
+  const { select, toggle, list } = controls;
+  select.checked = !!group.selectAll || !!tracks?.length && selected.size === tracks.length;
+  select.indeterminate = selected.size > 0 && !select.checked;
+  select.disabled = loading || tracks?.length === 0;
+  toggle.textContent = expanded ? "收起" : "展开";
+  toggle.setAttribute("aria-expanded", expanded);
+  list.hidden = !expanded;
+  list.replaceChildren();
+  if (!expanded) return;
+  if (!tracks?.length) {
+    const status = document.createElement("p");
+    status.textContent = loading ? "正在读取音轨…" : error || "没有可导出的音轨。";
+    list.append(status);
+    if (error) {
+      const retry = document.createElement("button");
+      retry.type = "button";
+      retry.textContent = "重试";
+      retry.addEventListener("click", () => void loadExportTracks(group));
+      list.append(retry);
+    }
+    return;
+  }
+  for (const track of tracks) {
+    const label = document.createElement("label");
+    const input = document.createElement("input");
+    input.type = "checkbox";
+    input.className = "export-track-select";
+    input.value = track.id;
+    input.checked = selected.has(track.id);
+    input.addEventListener("change", () => {
+      if (input.checked) selected.add(track.id);
+      else selected.delete(track.id);
+      select.checked = selected.size === tracks.length;
+      select.indeterminate = selected.size > 0 && !select.checked;
+      updateExportSummary();
+    });
+    label.append(input, exportTrackName(track));
+    list.append(label);
+  }
+}
+
+function showExport() {
+  ++viewGeneration;
+  stopTrack();
+  connection.textContent = "";
+  view("export");
+  const container = element("export-works");
+  container.replaceChildren();
+  for (const item of libraryWorks) {
+    const group = exportWorks.get(item.id);
+    const article = document.createElement("article");
+    article.className = "export-work";
+    article.dataset.workId = item.id;
+    const heading = document.createElement("div");
+    heading.className = "export-work-heading";
+    const label = document.createElement("label");
+    const select = document.createElement("input");
+    select.type = "checkbox";
+    select.className = "export-work-select";
+    label.append(select, item.name);
+    const toggle = document.createElement("button");
+    toggle.type = "button";
+    toggle.className = "export-work-toggle";
+    toggle.setAttribute("aria-label", `${item.name}音轨`);
+    const list = document.createElement("div");
+    list.className = "export-work-tracks";
+    list.id = `export-work-${item.id}`;
+    toggle.setAttribute("aria-controls", list.id);
+    group.controls = { select, toggle, list };
+    select.addEventListener("change", () => {
+      if (!group.tracks) {
+        void loadExportTracks(group, select.checked);
+        return;
+      }
+      group.selected = new Set(select.checked ? group.tracks.map(track => track.id) : []);
+      renderExportGroup(group);
+      updateExportSummary();
+    });
+    toggle.addEventListener("click", () => {
+      group.expanded = !group.expanded;
+      renderExportGroup(group);
+      if (group.expanded) void loadExportTracks(group);
+    });
+    heading.append(label, toggle);
+    article.append(heading, list);
+    container.append(article);
+    renderExportGroup(group);
+  }
+  updateExportSummary();
+}
+
 async function startPackageExport() {
-  const button = element("package-export");
-  if (button.disabled || packageForm.hidden) return;
+  if (element("package-export").disabled || activeView !== "export") return;
+  const packages = selectedExports();
   const status = element("package-transfer-status");
-  const link = element("hosted-library");
-  const generation = viewGeneration;
+  const cancel = element("cancel-package-transfer");
   const controller = new AbortController();
   packageTransfer = controller;
-  status.hidden = false;
-  const setStatus = message => {
-    if (generation === viewGeneration) status.textContent = message;
-  };
-  updatePackageSelection();
+  element("package-transfer").hidden = false;
+  cancel.hidden = false;
+  const setStatus = text => { status.textContent = text; };
+  updateExportSummary();
   try {
-    await exportOfflinePackage({
-      receiverUrl: link.href,
-      packageUrl: packageForm.action,
-      selection: element("package-selection").value,
+    const result = await exportOfflinePackages({
+      receiverUrl: installLink.href,
+      packages,
       signal: controller.signal,
       setStatus
     });
+    setStatus(`已导入手机离线库 · ${result.completedCount} 部作品。`);
   } catch (error) {
-    setStatus(controller.signal.aborted ? "已取消导出。"
-      : `${message(error)} 可选择「下载压缩包」后手动导入。`);
+    const progress = `已导入 ${error.completedCount ?? 0}/${packages.length} 部作品。`;
+    const stopped = error.packageName ? `停在「${error.packageName}」。` : "";
+    setStatus(controller.signal.aborted ? `已取消导出。${progress}${stopped}`
+      : `${progress}${stopped}${message(error)} 可在作品详情下载压缩包后手动导入。`);
   } finally {
     packageTransfer = null;
-    updatePackageSelection();
+    cancel.hidden = true;
+    updateExportSummary();
   }
 }
 
@@ -426,11 +650,13 @@ function hideInstallGuide() {
   installHelp.hidden = true;
 }
 
-async function showOffline() {
+async function showOffline(workId = null) {
   const generation = ++viewGeneration;
   stopTrack();
+  tracks = [];
   connection.textContent = "";
   view("offline");
+  element("offline-heading").textContent = "离线库";
   const list = element("offline-tracks");
   list.replaceChildren();
   const grid = element("offline-works");
@@ -443,23 +669,16 @@ async function showOffline() {
     const entries = await offlineStore.list();
     if (generation !== viewGeneration) return;
     work = null;
-    element("offline-heading").textContent = "离线库";
     const works = new Map();
     for (const record of entries) {
       if (!works.has(record.workId)) works.set(record.workId, []);
       works.get(record.workId).push(record);
     }
-    if (!works.has(offlineWorkId)) offlineWorkId = null;
-    if (offlineWorkId) {
-      tracks = works.get(offlineWorkId).sort((a, b) => a.order - b.order || a.id.localeCompare(b.id));
-      element("offline-heading").textContent = tracks[0].workName;
-      const back = document.createElement("button");
-      back.type = "button";
-      back.textContent = "返回离线库";
-      back.addEventListener("click", () => { offlineWorkId = null; void showOffline(); });
-      grid.append(back);
+    if (workId) {
+      tracks = (works.get(workId) ?? []).sort((a, b) => a.order - b.order || a.id.localeCompare(b.id));
+      if (tracks.length) element("offline-heading").textContent = tracks[0].workName;
+      else connection.textContent = "该作品没有已保存的音轨。";
     } else {
-      tracks = [];
       for (const [id, records] of works) {
         const card = document.createElement("button");
         card.className = "work-card";
@@ -469,20 +688,20 @@ async function showOffline() {
         image.src = url;
         image.alt = "";
         card.append(image, `${records[0].workName} · ${records.length} 条`);
-        card.addEventListener("click", () => { offlineWorkId = id; void showOffline(); });
+        card.addEventListener("click", () => navigate({ page: "offline", workId: id }));
         grid.append(card);
       }
     }
     const used = entries.reduce((sum, record) => sum + record.size + (record.cover?.size ?? 0), 0);
     element("offline-usage").textContent = entries.length
       ? `已保存 ${entries.length} 条音轨 · ${fileSize(used)}` : "暂无已保存音轨。";
-    for (const [index, record] of tracks.entries()) {
+    for (const record of tracks) {
       const row = document.createElement("li");
       const play = document.createElement("button");
       const detail = document.createElement("small");
       detail.textContent = `${record.workName} · ${fileSize(record.size)}`;
       play.append(record.trackName, detail);
-      play.addEventListener("click", () => playOffline(index));
+      play.addEventListener("click", () => openTrack(record, true));
       const remove = document.createElement("button");
       remove.textContent = "删除";
       remove.setAttribute("aria-label", `删除 ${record.trackName}`);
@@ -490,7 +709,10 @@ async function showOffline() {
         remove.disabled = true;
         try {
           await offlineStore.remove(record);
-          if (generation === viewGeneration) await showOffline();
+          if (generation === viewGeneration) {
+            saveScroll();
+            await renderRoute(route);
+          }
         } catch {
           if (generation === viewGeneration) connection.textContent = "无法删除已保存音轨，请重试。";
           remove.disabled = false;
@@ -505,7 +727,7 @@ async function showOffline() {
 }
 
 async function importPackages(files, transferSignal) {
-  if (!files.length || importing || receivingPackage) return false;
+  if (!files.length || importing || (receivingPackage && !transferSignal)) return false;
   const status = element("import-status");
   importing = new AbortController();
   const { signal } = importing;
@@ -544,8 +766,11 @@ async function importPackages(files, transferSignal) {
   } finally {
     transferSignal?.removeEventListener("abort", abort);
     importing = null;
-    offlineWorkId = null;
-    await showOffline();
+    updateImportControls();
+    if (activeView === "offline") {
+      saveScroll();
+      await renderRoute(route);
+    }
   }
 }
 
@@ -595,7 +820,7 @@ async function pairWithCode(code) {
       body: JSON.stringify({ code })
     });
     element("code").value = "";
-    await showWorks();
+    await renderRoute(route);
   } catch (error) {
     showPairing(error);
   } finally {
@@ -608,9 +833,13 @@ element("pair-form").addEventListener("submit", event => {
   void pairWithCode(element("code").value);
 });
 
-element("library-button").addEventListener("click", () => showWorks());
-element("refresh").addEventListener("click", () => showWorks());
-element("tracks-button").addEventListener("click", () => playingOffline ? showOffline() : showWork(work));
+element("refresh").addEventListener("click", () => {
+  saveScroll();
+  exportWorks = new Map();
+  void renderRoute(route);
+});
+element("tracks-button").addEventListener("click", back);
+element("batch-open").addEventListener("click", () => navigate({ page: "export" }));
 element("package-open").addEventListener("click", openPackageSelection);
 element("package-close").addEventListener("click", () => { packageForm.hidden = true; });
 element("package-tracks").addEventListener("change", updatePackageSelection);
@@ -620,9 +849,8 @@ element("package-all").addEventListener("change", event => {
 });
 element("package-export").addEventListener("click", startPackageExport);
 element("cancel-package-transfer").addEventListener("click", () => packageTransfer?.abort());
-window.addEventListener("pagehide", () => packageTransfer?.abort());
 packageForm.addEventListener("submit", event => {
-  if (packageTransfer || element("package-submit").disabled) {
+  if (element("package-submit").disabled) {
     event.preventDefault();
     return;
   }
@@ -658,8 +886,8 @@ element("pack-files").addEventListener("change", event => {
   event.target.value = "";
   void importPackages(files);
 });
-element("previous").addEventListener("click", () => (playingOffline ? playOffline : playTrack)(trackIndex - 1));
-element("next").addEventListener("click", () => (playingOffline ? playOffline : playTrack)(trackIndex + 1));
+element("previous").addEventListener("click", () => changeTrack(trackIndex - 1));
+element("next").addEventListener("click", () => changeTrack(trackIndex + 1));
 subtitleScroll.addEventListener("wheel", pauseSubtitleFollowing, { passive: true });
 subtitleScroll.addEventListener("touchmove", pauseSubtitleFollowing, { passive: true });
 subtitleScroll.addEventListener("pointerdown", event => {
@@ -737,6 +965,9 @@ async function startPlayer() {
       : "请从当前应用的菜单选择「在浏览器中打开」，或复制完整链接到浏览器打开。";
     return;
   }
+  history.scrollRestoration = "manual";
+  const saved = history.state;
+  route = saved?.home === home && saved.key && !location.hash ? saved : setRoute({ page: home }, 0, false);
   if (hosted) {
     showInstallGuide();
     if (offlineStore.available) {
@@ -747,7 +978,7 @@ async function startPlayer() {
         // The offline view shows the same guidance for unsupported or failed storage.
       }
     }
-    await showOffline();
+    await renderRoute(route);
     if (!offlineReady) connection.textContent = "无法启用离线存储，请使用 Safari 或 Chrome 打开。";
     transferReceiver = startOfflineTransferReceiver({
       available: offlineReady,
@@ -762,7 +993,7 @@ async function startPlayer() {
   }
   const pairingFragment = location.hash;
   if (!pairingFragment.startsWith("#pair=")) {
-    await showWorks(true);
+    await renderRoute(route);
     return;
   }
   // The fragment stays in the browser. Clear it before sending the one-time code.

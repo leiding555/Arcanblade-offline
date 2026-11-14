@@ -17,15 +17,19 @@
 </head>
 <body>
   <header class="site-header">
-    <button id="tracks-button" type="button" hidden>返回音轨</button>
+    <button id="tracks-button" type="button" hidden>返回</button>
     <span class="site-brand">
       <img src="mark.png" alt="" width="32" height="32">
       <strong>Arcanblade</strong>
     </span>
-    <button id="library-button" hidden>作品库</button>
+    <a id="install-app" href="https://leiding555.github.io/Arcanblade-offline/" target="_blank" rel="noopener noreferrer" hidden>离线库</a>
   </header>
   <main>
     <p id="connection" role="status"></p>
+    <div id="package-transfer" hidden>
+      <p id="package-transfer-status" role="status"></p>
+      <button id="cancel-package-transfer" type="button" hidden>取消导出</button>
+    </div>
     <section id="pairing" hidden>
       <h1>连接电脑</h1>
       <form id="pair-form">
@@ -38,14 +42,22 @@
       <div class="heading">
         <h1>作品库</h1>
         <div class="library-actions">
-          <a id="install-app" href="https://leiding555.github.io/Arcanblade-offline/#install" rel="noreferrer" hidden>添加到桌面</a>
+          <button id="batch-open" type="button" disabled>导出到离线库</button>
           <button id="refresh">刷新</button>
         </div>
       </div>
       <div id="works"></div>
     </section>
+    <section id="export" hidden>
+      <h1>导出到离线库</h1>
+      <div id="export-works"></div>
+      <div class="export-actions">
+        <span id="export-size" aria-live="polite"></span>
+        <button id="package-export" type="button" disabled>开始导出</button>
+      </div>
+    </section>
     <section id="work" hidden>
-      <div class="heading"><h1 id="work-name"></h1><button id="package-open" type="button" hidden>导出到手机</button></div>
+      <div class="heading"><h1 id="work-name"></h1><button id="package-open" type="button" hidden>下载离线包</button></div>
       <form id="package-form" method="post" hidden>
         <div class="heading">
           <label><input id="package-all" type="checkbox"> 全选</label>
@@ -54,13 +66,10 @@
         <div id="package-tracks"></div>
         <input id="package-selection" type="hidden" name="tracks">
         <div class="package-actions">
-          <button id="package-export" type="button">导出到手机</button>
           <button id="package-submit" type="submit">下载压缩包</button>
           <button id="package-close" type="button">取消</button>
-          <button id="cancel-package-transfer" type="button" hidden>取消导出</button>
         </div>
       </form>
-      <p id="package-transfer-status" role="status" hidden></p>
       <p id="package-help" hidden>下载完成后，从离线库的「导入离线包」选择下载的文件。</p>
       <a id="hosted-library" href="https://leiding555.github.io/Arcanblade-offline/" target="_blank" rel="noopener noreferrer" hidden>打开离线库</a>
       <ul id="tracks"></ul>

@@ -56,8 +56,14 @@
       <ul id="tracks"></ul>
     </section>
     <section id="offline" hidden>
-      <div class="heading"><h1 id="offline-heading">离线库</h1><button id="import-packs" type="button" hidden>导入离线包</button></div>
-      <input id="pack-files" type="file" multiple accept=".zip,application/zip" hidden>
+      <div class="heading">
+        <h1 id="offline-heading">离线库</h1>
+        <label id="import-packs" class="file-picker" for="pack-files" hidden>
+          导入离线包
+          <input id="pack-files" type="file" multiple accept=".zip,application/zip">
+        </label>
+        <button id="cancel-import" type="button" hidden>取消导入</button>
+      </div>
       <p id="import-status" role="status"></p>
       <p id="offline-usage"></p>
       <div id="offline-works"></div>

@@ -359,6 +359,11 @@ function fileSize(bytes) {
     : `${(bytes / 1024 ** 2).toFixed(1)} MB`;
 }
 
+function updateImportControls() {
+  element("import-packs").hidden = !offlineStore.hosted || !offlineReady || !!importing;
+  element("cancel-import").hidden = !importing;
+}
+
 async function showOffline() {
   const generation = ++viewGeneration;
   stopTrack();
@@ -370,7 +375,7 @@ async function showOffline() {
   grid.replaceChildren();
   for (const url of offlineCoverUrls) URL.revokeObjectURL(url);
   offlineCoverUrls = [];
-  element("import-packs").hidden = !offlineStore.hosted || !offlineReady;
+  updateImportControls();
   try {
     const entries = await offlineStore.list();
     if (generation !== viewGeneration) return;
@@ -442,10 +447,9 @@ async function showOffline() {
 async function importPackages(files) {
   if (!files.length || importing) return;
   const status = element("import-status");
-  const button = element("import-packs");
   importing = new AbortController();
   const { signal } = importing;
-  button.textContent = "取消导入";
+  updateImportControls();
   navigator.storage.persist?.().catch(() => {});
   const counts = { added: 0, updated: 0, skipped: 0 };
   const errors = [];
@@ -474,7 +478,6 @@ async function importPackages(files) {
     status.textContent = `${signal.aborted ? "已取消导入。" : "手机存储空间不足。"}${summary()} 已完成的音轨仍可播放。`;
   } finally {
     importing = null;
-    button.textContent = "导入离线包";
     offlineWorkId = null;
     await showOffline();
   }
@@ -612,11 +615,12 @@ packageForm.addEventListener("submit", () => {
   element("package-help").hidden = false;
   element("hosted-library").hidden = false;
 });
-element("import-packs").addEventListener("click", () => {
-  if (importing) importing.abort();
-  else if (!standalone && /iPhone|iPad|iPod|Macintosh.*Mobile/i.test(navigator.userAgent)) {
+element("cancel-import").addEventListener("click", () => importing?.abort());
+element("pack-files").addEventListener("click", event => {
+  if (!standalone && /iPhone|iPad|iPod|Macintosh.*Mobile/i.test(navigator.userAgent)) {
+    event.preventDefault();
     element("import-status").textContent = "请先在 Safari 通过分享菜单添加到主屏幕，再从主屏幕打开并导入。";
-  } else element("pack-files").click();
+  }
 });
 element("pack-files").addEventListener("change", event => {
   const files = Array.from(event.target.files);

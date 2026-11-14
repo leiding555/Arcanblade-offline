@@ -1,1 +1,96 @@
-<h1>Arcanblade 离线库</h1>
+<!doctype html>
+<html lang="zh-CN" data-offline-only="true">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#151a1d">
+  <title>Arcanblade 手机播放</title>
+  <link rel="icon" href="mark.png">
+  <link rel="apple-touch-icon" href="icon-192.png">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="stylesheet" href="player.css">
+  <script src="offline-zip.js" defer></script>
+  <script src="offline-store.js" defer></script>
+  <script src="player.js" defer></script>
+</head>
+<body>
+  <header class="site-header">
+    <button id="tracks-button" type="button" hidden>返回音轨</button>
+    <span class="site-brand">
+      <img src="mark.png" alt="" width="32" height="32">
+      <strong>Arcanblade</strong>
+    </span>
+    <button id="library-button" hidden>作品库</button>
+    <button id="offline-button" type="button" hidden>离线库</button>
+  </header>
+  <main>
+    <p id="connection" role="status"></p>
+    <section id="pairing" hidden>
+      <h1>连接电脑</h1>
+      <form id="pair-form">
+        <label for="code">电脑端显示的六位配对码</label>
+        <input id="code" name="code" type="text" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" required>
+        <button type="submit">连接</button>
+      </form>
+    </section>
+    <section id="library" hidden>
+      <div class="heading"><h1>作品库</h1><button id="refresh">刷新</button></div>
+      <div id="works"></div>
+    </section>
+    <section id="work" hidden>
+      <div class="heading"><h1 id="work-name"></h1><button id="package-open" type="button" hidden>下载离线包</button></div>
+      <form id="package-form" method="post" hidden>
+        <div class="heading">
+          <label><input id="package-all" type="checkbox"> 全选</label>
+          <span id="package-size" aria-live="polite"></span>
+        </div>
+        <div id="package-tracks"></div>
+        <input id="package-selection" type="hidden" name="tracks">
+        <div class="package-actions">
+          <button id="package-submit" type="submit">开始下载</button>
+          <button id="package-close" type="button">取消</button>
+        </div>
+      </form>
+      <p id="package-help" hidden>下载完成后，从离线库的「导入离线包」选择下载的文件。</p>
+      <a id="hosted-library" href="https://leiding555.github.io/Arcanblade-offline/" target="_blank" rel="noopener noreferrer" hidden>打开离线库</a>
+      <ul id="tracks"></ul>
+    </section>
+    <section id="offline" hidden>
+      <div class="heading"><h1 id="offline-heading">离线库</h1><button id="import-packs" type="button" hidden>导入离线包</button></div>
+      <input id="pack-files" type="file" multiple accept=".zip,application/zip" hidden>
+      <p id="import-status" role="status"></p>
+      <p id="offline-usage"></p>
+      <div id="offline-works"></div>
+      <ul id="offline-tracks"></ul>
+    </section>
+    <section id="player" hidden>
+      <div class="now-playing">
+        <img id="cover" src="mark.png" alt="" width="56" height="56">
+        <div class="track-info">
+          <p id="playing-work"></p>
+          <h1 id="playing-track"></h1>
+        </div>
+      </div>
+      <section id="subtitles" aria-labelledby="subtitle-heading" hidden>
+        <div class="subtitle-heading">
+          <h2 id="subtitle-heading">字幕</h2>
+          <button id="resume-subtitles" type="button" hidden>回到当前字幕</button>
+        </div>
+        <div id="subtitle-scroll" tabindex="0" role="region" aria-labelledby="subtitle-heading">
+          <ol id="subtitle-cues"></ol>
+        </div>
+      </section>
+      <footer class="player-controls">
+        <p id="playback-status" role="status"></p>
+        <audio id="audio" controls preload="metadata"></audio>
+        <div class="track-controls">
+          <button id="previous" type="button">上一首</button>
+          <button id="next" type="button">下一首</button>
+          <button id="save-track" type="button" hidden>保存到手机</button>
+        </div>
+        <p id="save-status" role="status" hidden></p>
+      </footer>
+    </section>
+  </main>
+</body>
+</html>

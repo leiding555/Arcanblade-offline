@@ -12,6 +12,8 @@ const resumeSubtitles = element("resume-subtitles");
 const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
 const hosted = document.documentElement.dataset.offlineOnly === "true";
 const inWechat = /MicroMessenger/i.test(navigator.userAgent);
+const inEmbeddedBrowser = inWechat || /\bQQ\/\d/i.test(navigator.userAgent)
+  || (/\bAndroid\b/i.test(navigator.userAgent) && /;\s*wv\s*\)/i.test(navigator.userAgent));
 const standaloneMode = window.matchMedia("(display-mode: standalone)");
 const isStandalone = () => standaloneMode.matches || navigator.standalone === true;
 const isAppleMobile = () => /iPhone|iPad|iPod|Macintosh.*Mobile/i.test(navigator.userAgent);
@@ -43,7 +45,7 @@ function view(id) {
   for (const name of views) element(name).hidden = name !== id;
   document.body.classList.toggle("player-open", id === "player");
   element("tracks-button").hidden = id !== "player";
-  element("library-button").hidden = hosted || id === "library" || id === "pairing" || inWechat;
+  element("library-button").hidden = hosted || id === "library" || id === "pairing";
   if (id !== "library") {
     installButton.hidden = true;
     installHelp.hidden = true;
@@ -559,9 +561,8 @@ installButton.addEventListener("click", () => {
   const steps = isAppleMobile()
     ? "在 Safari 点「分享 → 添加到主屏幕」，然后点「添加」。"
     : "在浏览器菜单选择「添加到主屏幕」或「创建快捷方式」。";
-  const browserSteps = inWechat ? "请先从微信右上角菜单选择「在浏览器中打开」，按需重新配对。" : "";
   const expanded = installHelp.hidden;
-  installHelp.textContent = browserSteps + steps + "快捷方式打开的是当前局域网地址，使用时电脑需开启共享。";
+  installHelp.textContent = steps + "快捷方式打开的是当前局域网地址，使用时电脑需开启共享。";
   installHelp.hidden = !expanded;
   installButton.setAttribute("aria-expanded", String(expanded));
 });
@@ -642,8 +643,11 @@ audio.addEventListener("error", async () => {
   }
 });
 async function startPlayer() {
-  if (hosted && inWechat) {
-    connection.textContent = "请从微信右上角菜单选择「在浏览器中打开」。";
+  const requiresBrowser = hosted ? inWechat : inEmbeddedBrowser && !isStandalone();
+  if (requiresBrowser) {
+    connection.textContent = inWechat
+      ? "请从微信右上角菜单选择「在浏览器中打开」。"
+      : "请从当前应用的菜单选择「在浏览器中打开」，或复制完整链接到浏览器打开。";
     return;
   }
   if (hosted) {

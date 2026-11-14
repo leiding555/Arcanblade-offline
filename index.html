@@ -107,6 +107,7 @@
         <div class="subtitle-heading">
           <h2 id="subtitle-heading">字幕</h2>
           <div class="subtitle-actions">
+            <button id="compact-subtitles" type="button">精简字幕</button>
             <button id="subtitle-pip" type="button" aria-pressed="false" aria-describedby="subtitle-pip-status" disabled>字幕画中画</button>
             <button id="resume-subtitles" type="button" hidden>回到当前字幕</button>
           </div>
@@ -124,6 +125,13 @@
           <button id="next" type="button">下一首</button>
         </div>
       </footer>
+      <section id="compact-subtitle-mode" aria-label="精简字幕" hidden>
+        <div class="compact-subtitle-content"><p id="compact-subtitle-text"></p></div>
+        <div class="compact-subtitle-controls">
+          <button id="compact-playback" type="button">播放</button>
+          <button id="close-compact-subtitles" type="button" aria-label="退出精简字幕" title="退出精简字幕">×</button>
+        </div>
+      </section>
     </section>
   </main>
 </body>

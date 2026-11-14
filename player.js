@@ -9,6 +9,8 @@ const subtitles = element("subtitles");
 const subtitleScroll = element("subtitle-scroll");
 const subtitleCues = element("subtitle-cues");
 const resumeSubtitles = element("resume-subtitles");
+const subtitlePipButton = element("subtitle-pip");
+const subtitlePipStatus = element("subtitle-pip-status");
 const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
 const hosted = document.documentElement.dataset.offlineOnly === "true";
 const inWechat = /MicroMessenger/i.test(navigator.userAgent);
@@ -41,6 +43,7 @@ let trackGeneration = 0;
 let frame = 0;
 let subtitleStatus = "";
 let subtitleRequest = null;
+let subtitlePip = null;
 let offlineReady = false;
 let playingOffline = false;
 let audioObjectUrl = "";
@@ -149,6 +152,7 @@ function message(error) {
 
 function stopTrack() {
   ++trackGeneration;
+  closeSubtitlePip();
   subtitleRequest?.abort();
   subtitleRequest = null;
   audio.pause();
@@ -170,6 +174,8 @@ function stopTrack() {
   subtitleScroll.scrollTo({ top: 0, behavior: "instant" });
   subtitles.hidden = true;
   resumeSubtitles.hidden = true;
+  subtitlePipButton.disabled = true;
+  subtitlePipStatus.textContent = "";
   subtitleStatus = "";
   playbackStatus.textContent = "";
 }
@@ -484,6 +490,128 @@ function cueTimestamp(ms) {
     : `${Math.floor(minutes / 60)}:${String(minutes % 60).padStart(2, "0")}:${tail}`;
 }
 
+function supportsSubtitlePip() {
+  return document.pictureInPictureEnabled === true
+    && typeof HTMLVideoElement.prototype.requestPictureInPicture === "function"
+    && typeof HTMLCanvasElement.prototype.captureStream === "function";
+}
+
+function updateSubtitlePipButton() {
+  const active = !!subtitlePip && document.pictureInPictureElement === subtitlePip.video;
+  subtitlePipButton.setAttribute("aria-pressed", String(active));
+  subtitlePipButton.disabled = !cueRows.length || !!audio.error || !supportsSubtitlePip() || !!subtitlePip?.opening;
+}
+
+function closeSubtitlePip() {
+  const session = subtitlePip;
+  if (!session) return;
+  subtitlePip = null;
+  if (document.pictureInPictureElement === session.video) {
+    void document.exitPictureInPicture().catch(() => {});
+  }
+  session.video.pause();
+  session.video.srcObject = null;
+  for (const track of session.stream.getTracks()) track.stop();
+  subtitlePipStatus.textContent = "";
+  updateSubtitlePipButton();
+}
+
+function renderSubtitlePip() {
+  const session = subtitlePip;
+  if (!session) return;
+  const cue = audio.ended ? -1 : latestActiveCue(activeCues);
+  const text = cue < 0 ? "" : cueRows[cue].text;
+  if (text === session.text) return;
+  session.text = text;
+  const { context } = session;
+  const { width, height } = context.canvas;
+  context.fillStyle = "#151a1d";
+  context.fillRect(0, 0, width, height);
+  if (!text) return;
+
+  context.font = "44px sans-serif";
+  const maxWidth = width - 64;
+  const lines = [];
+  for (const paragraph of text.split(/\r?\n/)) {
+    let line = "";
+    for (const character of paragraph) {
+      if (line && context.measureText(line + character).width > maxWidth) {
+        lines.push(line);
+        line = "";
+      }
+      if (lines.length === 5) break;
+      line += character;
+    }
+    if (lines.length === 5) {
+      lines[4] = Array.from(lines[4]).slice(0, -1).join("") + "…";
+      break;
+    }
+    lines.push(line);
+  }
+  context.fillStyle = "#f0f6f3";
+  context.textAlign = "center";
+  context.textBaseline = "middle";
+  lines.forEach((line, index) => {
+    context.fillText(line, width / 2, height / 2 + (index - (lines.length - 1) / 2) * 54, maxWidth);
+  });
+}
+
+async function toggleSubtitlePip() {
+  if (subtitlePipButton.disabled) return;
+  if (subtitlePip && document.pictureInPictureElement === subtitlePip.video) {
+    closeSubtitlePip();
+    return;
+  }
+
+  let session = subtitlePip;
+  let timeout;
+  subtitlePipButton.disabled = true;
+  subtitlePipStatus.textContent = "正在打开字幕画中画…";
+  try {
+    if (!session) {
+      const canvas = document.createElement("canvas");
+      canvas.width = 640;
+      canvas.height = 360;
+      const context = canvas.getContext("2d", { alpha: false });
+      if (!context) throw new Error("CanvasUnavailable");
+      const video = document.createElement("video");
+      video.muted = true;
+      video.playsInline = true;
+      const stream = canvas.captureStream();
+      session = subtitlePip = { video, context, stream, opening: true };
+      video.addEventListener("leavepictureinpicture", () => {
+        if (subtitlePip === session) closeSubtitlePip();
+      }, { once: true });
+      video.srcObject = stream;
+      renderSubtitlePip();
+      await Promise.race([video.play(), new Promise((_, reject) => {
+        timeout = setTimeout(() => reject(new Error("TimeoutError")), 5000);
+      })]);
+    }
+    if (subtitlePip !== session) return;
+    if (navigator.userActivation?.isActive === false) {
+      subtitlePipStatus.textContent = "字幕画面已准备，请再次点击「字幕画中画」。";
+      return;
+    }
+    session.opening = true;
+    await session.video.requestPictureInPicture();
+    if (subtitlePip !== session) {
+      if (document.pictureInPictureElement === session.video) await document.exitPictureInPicture();
+      return;
+    }
+    subtitlePipStatus.textContent = "字幕画中画已开启，可以切换到其他应用。";
+  } catch (error) {
+    if (subtitlePip !== session) return;
+    closeSubtitlePip();
+    const code = error.message === "TimeoutError" ? "TimeoutError" : error.name;
+    subtitlePipStatus.textContent = `无法打开字幕画中画（${code}）。`;
+  } finally {
+    clearTimeout(timeout);
+    if (session && subtitlePip === session) session.opening = false;
+    updateSubtitlePipButton();
+  }
+}
+
 function installSubtitles(entries) {
   const rows = document.createDocumentFragment();
   cueRows = [...entries].sort(([a], [b]) => a - b).map(([start, end, text], index) => {
@@ -504,11 +632,15 @@ function installSubtitles(entries) {
     button.append(timeLabel, cueText);
     item.append(button);
     rows.append(item);
-    return { start, button };
+    return { start, text, button };
   });
   cueEvents.sort((a, b) => a.time - b.time);
   subtitleCues.replaceChildren(rows);
   subtitles.hidden = !cueRows.length;
+  updateSubtitlePipButton();
+  if (cueRows.length && !supportsSubtitlePip()) {
+    subtitlePipStatus.textContent = "当前打开方式不支持字幕画中画。";
+  }
   renderSubtitles();
 }
 
@@ -568,6 +700,11 @@ function renderSubtitles() {
   if (followingSubtitles) followCue(currentCue);
 }
 
+function syncSubtitles() {
+  renderSubtitles();
+  renderSubtitlePip();
+}
+
 function pauseSubtitleFollowing() {
   if (!followingSubtitles || subtitles.hidden) return;
   followingSubtitles = false;
@@ -576,7 +713,7 @@ function pauseSubtitleFollowing() {
 }
 
 function tick() {
-  renderSubtitles();
+  syncSubtitles();
   frame = audio.paused || audio.ended ? 0 : requestAnimationFrame(tick);
 }
 
@@ -888,6 +1025,11 @@ element("pack-files").addEventListener("change", event => {
 });
 element("previous").addEventListener("click", () => changeTrack(trackIndex - 1));
 element("next").addEventListener("click", () => changeTrack(trackIndex + 1));
+subtitlePipButton.addEventListener("click", toggleSubtitlePip);
+document.addEventListener("visibilitychange", () => {
+  if (subtitlePip) syncSubtitles();
+});
+window.addEventListener("pagehide", closeSubtitlePip);
 subtitleScroll.addEventListener("wheel", pauseSubtitleFollowing, { passive: true });
 subtitleScroll.addEventListener("touchmove", pauseSubtitleFollowing, { passive: true });
 subtitleScroll.addEventListener("pointerdown", event => {
@@ -920,7 +1062,7 @@ subtitleCues.addEventListener("click", event => {
   subtitleScroll.scrollTo({ top: subtitleScroll.scrollTop, behavior: "instant" });
   audio.currentTime = seconds;
   followingSubtitles = false;
-  renderSubtitles();
+  syncSubtitles();
   followingSubtitles = true;
   resumeSubtitles.hidden = true;
   followCue(index);
@@ -931,15 +1073,18 @@ element("cover").addEventListener("error", event => {
 audio.addEventListener("playing", () => {
   playbackStatus.textContent = subtitleStatus;
   if (!frame) tick();
+  else syncSubtitles();
 });
 audio.addEventListener("waiting", () => {
   if (audio.getAttribute("src")) playbackStatus.textContent = "正在缓冲…";
 });
 for (const event of ["timeupdate", "seeking", "seeked", "pause", "ended"]) {
-  audio.addEventListener(event, renderSubtitles);
+  audio.addEventListener(event, syncSubtitles);
 }
 audio.addEventListener("error", async () => {
   if (!audio.getAttribute("src")) return;
+  closeSubtitlePip();
+  updateSubtitlePipButton();
   if (playingOffline) {
     playbackStatus.textContent = "此设备无法播放已保存的音频。";
     return;

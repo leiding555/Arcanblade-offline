@@ -106,13 +106,17 @@
       <section id="subtitles" aria-labelledby="subtitle-heading" hidden>
         <div class="subtitle-heading">
           <h2 id="subtitle-heading">字幕</h2>
-          <button id="resume-subtitles" type="button" hidden>回到当前字幕</button>
+          <div class="subtitle-actions">
+            <button id="subtitle-pip" type="button" aria-pressed="false" aria-describedby="subtitle-pip-status" disabled>字幕画中画</button>
+            <button id="resume-subtitles" type="button" hidden>回到当前字幕</button>
+          </div>
         </div>
         <div id="subtitle-scroll" tabindex="0" role="region" aria-labelledby="subtitle-heading">
           <ol id="subtitle-cues"></ol>
         </div>
       </section>
       <footer class="player-controls">
+        <p id="subtitle-pip-status" role="status"></p>
         <p id="playback-status" role="status"></p>
         <audio id="audio" controls preload="metadata"></audio>
         <div class="track-controls">

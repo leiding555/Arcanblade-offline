@@ -58,12 +58,16 @@
     <section id="offline" hidden>
       <div class="heading">
         <h1 id="offline-heading">离线库</h1>
-        <label id="import-packs" class="file-picker" for="pack-files" hidden>
-          导入离线包
-          <input id="pack-files" type="file" multiple accept=".zip,application/zip">
-        </label>
-        <button id="cancel-import" type="button" hidden>取消导入</button>
+        <div class="offline-actions">
+          <button id="install-app" type="button" hidden>添加到桌面</button>
+          <label id="import-packs" class="file-picker" for="pack-files" hidden>
+            导入离线包
+            <input id="pack-files" type="file" multiple accept=".zip,application/zip">
+          </label>
+          <button id="cancel-import" type="button" hidden>取消导入</button>
+        </div>
       </div>
+      <p id="install-help" role="status"></p>
       <p id="import-status" role="status"></p>
       <p id="offline-usage"></p>
       <div id="offline-works"></div>

@@ -13,7 +13,13 @@ const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
 const saveButton = element("save-track");
 const saveStatus = element("save-status");
 const inWechat = /MicroMessenger/i.test(navigator.userAgent);
-const standalone = window.matchMedia("(display-mode: standalone)").matches || navigator.standalone === true;
+const standaloneMode = window.matchMedia("(display-mode: standalone)");
+const isStandalone = () => standaloneMode.matches || navigator.standalone === true;
+const isAppleMobile = () => /iPhone|iPad|iPod|Macintosh.*Mobile/i.test(navigator.userAgent);
+const installButton = element("install-app");
+const installHelp = element("install-help");
+let installPrompt = null;
+let appInstalled = false;
 let work = null;
 let tracks = [];
 let trackIndex = -1;
@@ -364,6 +370,12 @@ function updateImportControls() {
   element("cancel-import").hidden = !importing;
 }
 
+function updateInstallControls() {
+  installButton.hidden = !offlineStore.hosted || !offlineReady || offlineWorkId !== null
+    || isStandalone() || appInstalled;
+  if (installButton.hidden) installHelp.textContent = "";
+}
+
 async function showOffline() {
   const generation = ++viewGeneration;
   stopTrack();
@@ -376,6 +388,7 @@ async function showOffline() {
   for (const url of offlineCoverUrls) URL.revokeObjectURL(url);
   offlineCoverUrls = [];
   updateImportControls();
+  updateInstallControls();
   try {
     const entries = await offlineStore.list();
     if (generation !== viewGeneration) return;
@@ -389,6 +402,7 @@ async function showOffline() {
         works.get(record.workId).push(record);
       }
       if (!works.has(offlineWorkId)) offlineWorkId = null;
+      updateInstallControls();
       if (offlineWorkId) {
         tracks = works.get(offlineWorkId).sort((a, b) => a.order - b.order || a.id.localeCompare(b.id));
         element("offline-heading").textContent = tracks[0].workName;
@@ -529,7 +543,7 @@ async function saveCurrentTrack() {
     return;
   }
   if (!work || !tracks[trackIndex] || playingOffline) return;
-  if (!standalone && /iPhone|iPad|iPod|Macintosh.*Mobile/i.test(navigator.userAgent)) {
+  if (!isStandalone() && isAppleMobile()) {
     saveStatus.textContent = "请先通过 Safari 的分享菜单添加到主屏幕，再从主屏幕打开并保存。";
     updateSaveState();
     return;
@@ -616,8 +630,46 @@ packageForm.addEventListener("submit", () => {
   element("hosted-library").hidden = false;
 });
 element("cancel-import").addEventListener("click", () => importing?.abort());
+window.addEventListener("beforeinstallprompt", event => {
+  if (!offlineStore.hosted || isStandalone() || appInstalled) return;
+  event.preventDefault();
+  installPrompt = event;
+  installHelp.textContent = "";
+});
+window.addEventListener("appinstalled", () => {
+  appInstalled = true;
+  installPrompt = null;
+  updateInstallControls();
+});
+standaloneMode.addEventListener("change", updateInstallControls);
+installButton.addEventListener("click", async () => {
+  const manualSteps = isAppleMobile()
+    ? "在 Safari 点「分享 → 添加到主屏幕」，开启「作为网页 App 打开」，然后点「添加」。"
+    : "打开浏览器菜单，选择「添加到主屏幕」或「安装应用」。";
+  if (!installPrompt) {
+    installHelp.textContent = manualSteps;
+    return;
+  }
+  const prompt = installPrompt;
+  installPrompt = null;
+  installHelp.textContent = "";
+  installButton.disabled = true;
+  try {
+    await prompt.prompt();
+    const { outcome } = await prompt.userChoice;
+    if (outcome === "accepted") {
+      appInstalled = true;
+      installPrompt = null;
+      updateInstallControls();
+    }
+  } catch {
+    if (!installButton.hidden) installHelp.textContent = manualSteps;
+  } finally {
+    installButton.disabled = false;
+  }
+});
 element("pack-files").addEventListener("click", event => {
-  if (!standalone && /iPhone|iPad|iPod|Macintosh.*Mobile/i.test(navigator.userAgent)) {
+  if (!isStandalone() && isAppleMobile()) {
     event.preventDefault();
     element("import-status").textContent = "请先在 Safari 通过分享菜单添加到主屏幕，再从主屏幕打开并导入。";
   }
@@ -718,7 +770,7 @@ async function startPlayer() {
     return;
   }
   const pairingFragment = location.hash;
-  if (offlineReady && !pairingFragment && (standalone || navigator.onLine === false
+  if (offlineReady && !pairingFragment && (isStandalone() || navigator.onLine === false
       || navigator.serviceWorker.controller)) {
     await showOffline();
     return;

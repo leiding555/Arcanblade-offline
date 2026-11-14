@@ -2,7 +2,7 @@
 
 const scope = new URL(self.registration.scope);
 const prefix = scope.pathname === "/" ? "arcanblade-shell-" : `arcanblade-shell:${scope.pathname}:`;
-const CACHE = prefix + "0926fd832dcfa0ba3c245029c52825ecb6b2f8f040bf94e38cc7a9126f7491ca";
+const CACHE = prefix + "a71771f58af2096defce4022f01668dfe91468ffbc74fa97104ac1c68682e5cf";
 const SHELL = ["./", "player.css", "player.js", "mark.png", "manifest.webmanifest", "icon-192.png", "icon-512.png",
   "offline-store.js", "offline-download.js", "offline-zip.js", "offline-transfer-receiver.js"].map(path => new URL(path, scope).href);
 

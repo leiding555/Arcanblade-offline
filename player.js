@@ -9,10 +9,6 @@ const subtitles = element("subtitles");
 const subtitleScroll = element("subtitle-scroll");
 const subtitleCues = element("subtitle-cues");
 const resumeSubtitles = element("resume-subtitles");
-const compactSubtitleButton = element("compact-subtitles");
-const compactSubtitleMode = element("compact-subtitle-mode");
-const compactSubtitleText = element("compact-subtitle-text");
-const compactPlayback = element("compact-playback");
 const subtitlePipButton = element("subtitle-pip");
 const subtitlePipStatus = element("subtitle-pip-status");
 const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
@@ -103,10 +99,7 @@ async function renderRoute(entry) {
     if (route !== entry || activeView !== "offline") return;
     if (page === "offline-player") await playOffline(tracks.findIndex(track => track.id === trackId));
   }
-  if (route === entry) {
-    if (activeView === "player") setCompactSubtitleMode(!!entry.compactSubtitles);
-    window.scrollTo({ top: scrollPositions.get(entry.key) ?? 0, behavior: "instant" });
-  }
+  if (route === entry) window.scrollTo({ top: scrollPositions.get(entry.key) ?? 0, behavior: "instant" });
 }
 
 function back() {
@@ -118,13 +111,8 @@ function back() {
 window.addEventListener("popstate", ({ state }) => {
   goingBack = false;
   if (state?.home !== home || !state.key) return;
-  const samePlayer = activeView === "player" && state.key === route?.key && state.trackId === route.trackId;
   saveScroll();
   route = state;
-  if (samePlayer) {
-    setCompactSubtitleMode(!!state.compactSubtitles);
-    return;
-  }
   void renderRoute(route);
 });
 
@@ -182,7 +170,6 @@ function stopTrack() {
   nextCueEvent = 0;
   activeCues.clear();
   followingSubtitles = true;
-  setCompactSubtitleMode(false);
   subtitleCues.replaceChildren();
   subtitleScroll.scrollTo({ top: 0, behavior: "instant" });
   subtitles.hidden = true;
@@ -503,42 +490,6 @@ function cueTimestamp(ms) {
     : `${Math.floor(minutes / 60)}:${String(minutes % 60).padStart(2, "0")}:${tail}`;
 }
 
-function openCompactSubtitles() {
-  if (goingBack || activeView !== "player" || route.compactSubtitles || !cueRows.length) return;
-  route = { ...route, compactSubtitles: true };
-  history.pushState(route, "");
-  setCompactSubtitleMode(true);
-}
-
-function setCompactSubtitleMode(enabled) {
-  if (enabled === !compactSubtitleMode.hidden) return;
-  compactSubtitleMode.hidden = !enabled;
-  document.body.classList.toggle("compact-subtitles-open", enabled);
-  if (enabled) {
-    syncSubtitles();
-    updateCompactPlayback();
-    compactPlayback.focus({ preventScroll: true });
-  } else if (activeView === "player" && cueRows.length) {
-    compactSubtitleButton.focus({ preventScroll: true });
-    if (followingSubtitles) followCue(latestActiveCue(activeCues));
-  }
-}
-
-function updateCompactPlayback() {
-  if (compactSubtitleMode.hidden) return;
-  compactPlayback.disabled = !audio.hasAttribute("src") || !!audio.error;
-  compactPlayback.textContent = audio.paused || audio.ended ? "播放" : "暂停";
-}
-
-function renderCompactSubtitles() {
-  if (compactSubtitleMode.hidden) return;
-  const currentCue = audio.ended || audio.error ? -1 : latestActiveCue(activeCues);
-  const text = cueRows[currentCue]?.text ?? "";
-  if (compactSubtitleText.textContent === text) return;
-  compactSubtitleText.textContent = text;
-  compactSubtitleText.parentElement.scrollTop = 0;
-}
-
 function supportsSubtitlePip() {
   return document.pictureInPictureEnabled === true
     && typeof HTMLVideoElement.prototype.requestPictureInPicture === "function"
@@ -690,7 +641,7 @@ function installSubtitles(entries) {
   if (cueRows.length && !supportsSubtitlePip()) {
     subtitlePipStatus.textContent = "当前打开方式不支持字幕画中画。";
   }
-  syncSubtitles();
+  renderSubtitles();
 }
 
 function latestActiveCue(cues) {
@@ -700,7 +651,7 @@ function latestActiveCue(cues) {
 }
 
 function followCue(index) {
-  if (index < 0 || subtitles.hidden || !compactSubtitleMode.hidden) return;
+  if (index < 0 || subtitles.hidden) return;
   const row = cueRows[index].button.getBoundingClientRect();
   const viewport = subtitleScroll.getBoundingClientRect();
   const top = viewport.top + subtitleScroll.clientTop;
@@ -752,7 +703,6 @@ function renderSubtitles() {
 function syncSubtitles() {
   renderSubtitles();
   renderSubtitlePip();
-  renderCompactSubtitles();
 }
 
 function pauseSubtitleFollowing() {
@@ -1075,18 +1025,9 @@ element("pack-files").addEventListener("change", event => {
 });
 element("previous").addEventListener("click", () => changeTrack(trackIndex - 1));
 element("next").addEventListener("click", () => changeTrack(trackIndex + 1));
-compactSubtitleButton.addEventListener("click", openCompactSubtitles);
-element("close-compact-subtitles").addEventListener("click", back);
-compactPlayback.addEventListener("click", () => {
-  if (!audio.paused && !audio.ended) {
-    audio.pause();
-    return;
-  }
-  void audio.play().catch(updateCompactPlayback);
-});
 subtitlePipButton.addEventListener("click", toggleSubtitlePip);
 document.addEventListener("visibilitychange", () => {
-  if (subtitlePip || !compactSubtitleMode.hidden) syncSubtitles();
+  if (subtitlePip) syncSubtitles();
 });
 window.addEventListener("pagehide", closeSubtitlePip);
 subtitleScroll.addEventListener("wheel", pauseSubtitleFollowing, { passive: true });
@@ -1140,16 +1081,10 @@ audio.addEventListener("waiting", () => {
 for (const event of ["timeupdate", "seeking", "seeked", "pause", "ended"]) {
   audio.addEventListener(event, syncSubtitles);
 }
-for (const event of ["loadstart", "play", "pause", "ended"]) {
-  audio.addEventListener(event, updateCompactPlayback);
-}
 audio.addEventListener("error", async () => {
   if (!audio.getAttribute("src")) return;
   closeSubtitlePip();
   updateSubtitlePipButton();
-  updateCompactPlayback();
-  renderCompactSubtitles();
-  if (!compactSubtitleMode.hidden) back();
   if (playingOffline) {
     playbackStatus.textContent = "此设备无法播放已保存的音频。";
     return;

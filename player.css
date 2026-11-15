@@ -175,7 +175,7 @@ h1 { margin: .45rem 0 .8rem; font-size: 1.45rem; overflow-wrap: anywhere; }
 .player-controls { grid-row: 3; border-top: 1px solid var(--border); padding-top: .45rem; }
 #playback-status, #subtitle-pip-status { margin: 0 0 .4rem; font-size: .875rem; color: var(--muted); }
 #audio { width: 100%; display: block; margin: 0 0 .4rem; }
-.track-controls { display: flex; justify-content: center; gap: .65rem; }
+.track-controls { display: flex; flex-wrap: wrap; justify-content: center; gap: .65rem; }
 #subtitles { min-height: 0; display: grid; grid-template-rows: auto minmax(0, 1fr); }
 .subtitle-heading {
   display: flex;

@@ -3,6 +3,7 @@
 const element = id => document.getElementById(id);
 const views = ["pairing", "library", "export", "work", "offline", "player"];
 const audio = element("audio");
+const playbackMode = element("playback-mode");
 const connection = element("connection");
 const playbackStatus = element("playback-status");
 const subtitles = element("subtitles");
@@ -42,6 +43,7 @@ let viewGeneration = 0;
 let trackGeneration = 0;
 let frame = 0;
 let subtitleStatus = "";
+let autoplayBlocked = false;
 let subtitleRequest = null;
 let subtitlePip = null;
 let offlineReady = false;
@@ -195,6 +197,7 @@ function stopTrack() {
   subtitlePipButton.disabled = true;
   subtitlePipStatus.textContent = "";
   subtitleStatus = "";
+  autoplayBlocked = false;
   playbackStatus.textContent = "";
 }
 
@@ -739,6 +742,19 @@ function tick() {
   frame = audio.paused || audio.ended ? 0 : requestAnimationFrame(tick);
 }
 
+function startAudio(generation) {
+  audio.play().catch(error => {
+    if (generation !== trackGeneration || error.name !== "NotAllowedError") return;
+    autoplayBlocked = true;
+    playbackStatus.textContent = "请点击播放器的播放按钮。";
+  });
+}
+
+function setSubtitleStatus(message) {
+  subtitleStatus = message;
+  if (!audio.error && !autoplayBlocked) playbackStatus.textContent = message;
+}
+
 function playTrack(index) {
   if (!work || index < 0 || index >= tracks.length) return;
   stopTrack();
@@ -755,21 +771,16 @@ function playTrack(index) {
 
   const path = `/api/works/${work.id}/tracks/${track.id}`;
   audio.src = path + "/audio";
-  audio.play().catch(error => {
-    if (generation === trackGeneration && error.name === "NotAllowedError") {
-      playbackStatus.textContent = "请点击播放器的播放按钮。";
-    }
-  });
+  startAudio(generation);
   subtitleRequest = new AbortController();
   request(path + "/subtitles", { signal: subtitleRequest.signal }).then(result => {
     if (generation !== trackGeneration) return;
     installSubtitles(result.entries);
-    subtitleStatus = subtitleMessage(result.state);
-    if (!audio.error) playbackStatus.textContent = subtitleStatus;
+    setSubtitleStatus(subtitleMessage(result.state));
   }).catch(error => {
     if (generation !== trackGeneration || error.name === "AbortError") return;
     if (error.status === 401) showPairing(error);
-    else if (!audio.error) playbackStatus.textContent = "暂时无法读取字幕。";
+    else setSubtitleStatus("暂时无法读取字幕。");
   });
 }
 
@@ -960,13 +971,8 @@ async function playOffline(index) {
     audioObjectUrl = URL.createObjectURL(file.slice(0, file.size, record.mime));
     audio.src = audioObjectUrl;
     installSubtitles(record.subtitles.entries);
-    subtitleStatus = subtitleMessage(record.subtitles.state);
-    playbackStatus.textContent = subtitleStatus;
-    audio.play().catch(error => {
-      if (generation === trackGeneration && error.name === "NotAllowedError") {
-        playbackStatus.textContent = "请点击播放器的播放按钮。";
-      }
-    });
+    setSubtitleStatus(subtitleMessage(record.subtitles.state));
+    startAudio(generation);
   } catch {
     if (generation === trackGeneration) playbackStatus.textContent = "本地音频已缺失，请重新导入离线包。";
   }
@@ -1062,6 +1068,11 @@ element("pack-files").addEventListener("change", event => {
 });
 element("previous").addEventListener("click", () => changeTrack(trackIndex - 1));
 element("next").addEventListener("click", () => changeTrack(trackIndex + 1));
+playbackMode.addEventListener("click", () => {
+  audio.loop = !audio.loop;
+  playbackMode.textContent = audio.loop ? "单曲循环" : "顺序播放";
+  playbackMode.setAttribute("aria-label", audio.loop ? "单曲循环，切换为顺序播放" : "顺序播放，切换为单曲循环");
+});
 subtitlePipButton.addEventListener("click", toggleSubtitlePip);
 document.addEventListener("visibilitychange", () => {
   if (subtitlePip) syncSubtitles();
@@ -1108,16 +1119,21 @@ element("cover").addEventListener("error", event => {
   if (!event.target.src.endsWith("/mark.png")) event.target.src = "mark.png";
 });
 audio.addEventListener("playing", () => {
+  autoplayBlocked = false;
   playbackStatus.textContent = subtitleStatus;
   if (!frame) tick();
   else syncSubtitles();
 });
 audio.addEventListener("waiting", () => {
-  if (audio.getAttribute("src")) playbackStatus.textContent = "正在缓冲…";
+  if (audio.getAttribute("src") && !autoplayBlocked) playbackStatus.textContent = "正在缓冲…";
 });
-for (const event of ["timeupdate", "seeking", "seeked", "pause", "ended"]) {
+for (const event of ["timeupdate", "seeking", "seeked", "pause"]) {
   audio.addEventListener(event, syncSubtitles);
 }
+audio.addEventListener("ended", () => {
+  syncSubtitles();
+  if (audio.ended && !audio.loop && activeView === "player" && !goingBack) changeTrack(trackIndex + 1);
+});
 audio.addEventListener("error", async () => {
   if (!audio.getAttribute("src")) return;
   closeSubtitlePip();
